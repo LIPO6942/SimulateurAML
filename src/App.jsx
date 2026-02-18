@@ -8,8 +8,6 @@ import './styles.css';
 import { debounce } from 'lodash';
 
 
-// ─── AUTHENTICATION ───────────────────────────────────────────────────────────────
-
 const auth = getAuth();
 
 const AuthGate = () => {
@@ -79,51 +77,48 @@ const LoginScreen = () => {
   );
 };
 
-// ─── MAIN APP COMPONENT ─────────────────────────────────────────────────────────── 
 function App() {
 
-  // ─── STATES ─────────────────────────────────────────────────────────────────── 
   const [clients, setClients] = useState([]);
   const [history, setHistory] = useState([]);
   const [simResults, setSimResults] = useState({});
-  const [theme, setTheme] = useState("dark"); // Theme is local, not synced
-
+  const [theme, setTheme] = useState("dark");
   const [selId, setSelId] = useState(null);
   const [form, setForm] = useState(null);
   const [tab, setTab] = useState("form");
+  const [globalError, setGlobalError] = useState(null);
 
-  // ─── DATA SYNCING w/ FIREBASE ───────────────────────────────────────────────────
   useEffect(() => {
     if (!auth.currentUser) return;
 
-    const unsubscribeClients = onSnapshot(collection(db, 'clients'), snapshot => {
-      const clientsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setClients(clientsData);
-    });
+    const handleSnapshotError = (err, context) => {
+        console.error(`Erreur de lecture (${context}):`, err);
+        setGlobalError(`Impossible de charger les données (${context}). Vérifiez vos règles de sécurité Firestore et la connexion.`)
+    }
 
-    const unsubscribeHistory = onSnapshot(collection(db, 'history'), snapshot => {
-      const historyData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
-      setHistory(historyData);
-    });
+    const unsubscribeClients = onSnapshot(collection(db, 'clients'), 
+        snapshot => setClients(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))),
+        err => handleSnapshotError(err, 'clients')
+    );
+    const unsubscribeHistory = onSnapshot(collection(db, 'history'), 
+        snapshot => setHistory(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp))),
+        err => handleSnapshotError(err, 'history')
+    );
+    const unsubscribeResults = onSnapshot(collection(db, 'simResults'), 
+        snapshot => {
+            const resultsData = {};
+            snapshot.docs.forEach(doc => { resultsData[doc.id] = doc.data().results; });
+            setSimResults(resultsData);
+        },
+        err => handleSnapshotError(err, 'simulations')
+    );
 
-    const unsubscribeResults = onSnapshot(collection(db, 'simResults'), snapshot => {
-      const resultsData = {};
-      snapshot.docs.forEach(doc => { resultsData[doc.id] = doc.data().results; });
-      setSimResults(resultsData);
-    });
-
-    return () => {
-      unsubscribeClients();
-      unsubscribeHistory();
-      unsubscribeResults();
-    };
+    return () => { unsubscribeClients(); unsubscribeHistory(); unsubscribeResults(); };
   }, []);
 
-  // ─── THEME LOGIC ──────────────────────────────────────────────────────────────
   const toggleTheme = () => setTheme(p => p === 'light' ? 'dark' : 'light');
   useEffect(() => { document.body.setAttribute('data-theme', theme); }, [theme]);
 
-  // ─── CLIENT & FORM MANAGEMENT ─────────────────────────────────────────────────
   const selectClient = useCallback((c) => {
     if (!c) return;
     setSelId(c.id);
@@ -145,67 +140,108 @@ function App() {
   }, [clients, selId, selectClient]);
   
   const addClient = async () => {
-    const newClient = { ...CLIENT_VIDE, nom: `Nouveau client`, createdAt: new Date().toISOString() };
-    const docRef = await addDoc(collection(db, 'clients'), newClient);
-    selectClient({ id: docRef.id, ...newClient });
+    setGlobalError(null);
+    try {
+        const newClient = { ...CLIENT_VIDE, nom: `Nouveau client ${clients.length + 1}`, createdAt: new Date().toISOString() };
+        const docRef = await addDoc(collection(db, 'clients'), newClient);
+        selectClient({ id: docRef.id, ...newClient });
+    } catch (e) {
+        console.error("Error adding client: ", e);
+        setGlobalError(`Erreur d'ajout de client: ${e.message}`);
+    }
   };
 
   const deleteClient = async (e, idToDelete) => {
     e.stopPropagation();
+    setGlobalError(null);
     if (window.confirm("Êtes-vous sûr de vouloir supprimer ce client ?")) {
-      await deleteDoc(doc(db, 'clients', idToDelete));
-      await deleteDoc(doc(db, 'simResults', idToDelete)); // Clean up results
+        try {
+            await deleteDoc(doc(db, 'clients', idToDelete));
+            await deleteDoc(doc(db, 'simResults', idToDelete));
+        } catch (e) {
+            console.error("Error deleting client: ", e);
+            setGlobalError(`Erreur de suppression: ${e.message}`);
+        }
     }
   };
 
-  const debouncedUpdate = useMemo(() => 
+  const debouncedUpdate = useMemo(() =>
     debounce(async (id, field, value) => {
-        if(!id) return;
-      const docRef = doc(db, 'clients', id);
-      await updateDoc(docRef, { [field]: value });
-    }, 400),[]);
+        if (!id) return;
+        setGlobalError(null);
+        try {
+            const docRef = doc(db, 'clients', id);
+            await updateDoc(docRef, { [field]: value });
+        } catch (e) {
+            console.error("Error updating client: ", e);
+            setGlobalError(`Erreur de mise à jour: ${e.message}`);
+        }
+    }, 400),
+  []);
 
   const updateFormField = (key, value) => {
       if(!form) return;
-    setForm(prevForm => {
-      const newForm = { ...prevForm, [key]: value };
-      debouncedUpdate(newForm.id, key, value);
-      return newForm;
-    });
+      setForm(prevForm => {
+        const newForm = { ...prevForm, [key]: value };
+        debouncedUpdate(newForm.id, key, value);
+        return newForm;
+      });
   };
 
-  // ─── SIMULATION ENGINE ────────────────────────────────────────────────────────
   const lancerSim = async () => {
-    const results = evaluerIndicateurs(form);
-    await setDoc(doc(db, 'simResults', form.id), { results });
-    await addDoc(collection(db, 'history'), {
-      clientId: form.id,
-      clientName: form.nom,
-      timestamp: new Date().toISOString(),
-      results
-    });
-    setTab("resultats");
+    if (!form || !form.id) {
+        setGlobalError("Aucun client sélectionné pour lancer la simulation.");
+        return;
+    }
+    setGlobalError(null);
+    try {
+        const results = evaluerIndicateurs(form);
+        const batch = writeBatch(db);
+        
+        const resultsRef = doc(db, 'simResults', form.id);
+        batch.set(resultsRef, { results });
+
+        const historyRef = doc(collection(db, 'history'));
+        batch.set(historyRef, {
+            clientId: form.id,
+            clientName: form.nom,
+            timestamp: new Date().toISOString(),
+            results
+        });
+
+        await batch.commit();
+        setTab("resultats");
+    } catch (e) {
+        console.error("Error running simulation: ", e);
+        setGlobalError(`Erreur de simulation: ${e.message}`);
+    }
   };
 
   const runAll = async () => {
-    const batch = writeBatch(db);
-    clients.forEach(c => {
-      const results = evaluerIndicateurs(c);
-      const resRef = doc(db, "simResults", c.id);
-      batch.set(resRef, { results });
+    setGlobalError(null);
+    try {
+        const batch = writeBatch(db);
+        clients.forEach(c => {
+            const results = evaluerIndicateurs(c);
+            const resRef = doc(db, "simResults", c.id);
+            batch.set(resRef, { results });
 
-      const histRef = doc(collection(db, "history"));
-      batch.set(histRef, { 
-        clientId: c.id, 
-        clientName: c.nom,
-        timestamp: new Date().toISOString(),
-        results
-      });
-    });
-    await batch.commit();
+            const histRef = doc(collection(db, "history"));
+            batch.set(histRef, { 
+                clientId: c.id, 
+                clientName: c.nom,
+                timestamp: new Date().toISOString(),
+                results
+            });
+        });
+        await batch.commit();
+        alert(`${clients.length} clients ont été analysés avec succès !`);
+    } catch (e) {
+        console.error("Error running all simulations: ", e);
+        setGlobalError(`Erreur d'analyse globale: ${e.message}`);
+    }
   };
 
-  // ─── DERIVED DATA & HELPERS ───────────────────────────────────────────────────
   const getDot = (id) => {
     const r = simResults[id];
     if (!r) return "cli-dot d-ok";
@@ -219,7 +255,6 @@ function App() {
   const curAlerts = curInds ? curInds.filter(x => x.alerte) : [];
   const grp = form ? getGroupe(form.activite) : null;
 
-  // ─── RENDER ─────────────────────────────────────────────────────────────────────
   return (
     <div className="app">
       <Header theme={theme} toggleTheme={toggleTheme} />
@@ -232,6 +267,7 @@ function App() {
         getDot={getDot}
       />
       <main className="main">
+        <ErrorDisplay message={globalError} onClose={() => setGlobalError(null)} />
         {clients.length > 0 && form ? (
           <>
             <div className="tabs">
@@ -255,12 +291,17 @@ function App() {
   );
 }
 
-// ... (Les autres composants restent les mêmes) ...
-
 export default AuthGate;
 
-// Note: Due to the new auth structure, we export AuthGate as the default.
-// The main App component is now rendered by AuthGate when a user is logged in.
+const ErrorDisplay = ({ message, onClose }) => {
+    if (!message) return null;
+    return (
+        <div className="error-banner">
+            <span>{message}</span>
+            <button onClick={onClose} className="close-btn">&times;</button>
+        </div>
+    );
+};
 
 const Header = ({ theme, toggleTheme }) => {
   const user = auth.currentUser;
@@ -312,8 +353,8 @@ const Tab = ({ id, label, currentTab, setTab }) => (
 
 const WelcomePanel = ({ addClient }) => (
   <div className="welcome-panel">
-    <h2>Bienvenue sur votre plateforme collaborative</h2>
-    <p>Aucun client dans le portefeuille. Les données sont synchronisées en temps réel pour tous les utilisateurs.</p>
+    <h2>Bienvenue sur le Simulateur</h2>
+    <p>Aucun client dans le portefeuille pour le moment. Cliquez sur le bouton ci-dessous pour commencer.</p>
     <button className="run" onClick={addClient}>+ Créer le premier client</button>
   </div>
 );
@@ -335,7 +376,7 @@ const FormPanel = ({ form, updateField, grp, lancerSim }) => {
           {["élève","étudiant","sans profession","travailleur indépendant","salarié","fonctionnaire","chef d'entreprise","profession libérale","PM"].map(a => <option key={a}>{a}</option>)}
         </Field>
         <Field label="Niveau de risque LCB-FT" as="select" value={form.niveauRisque} onChange={e => set("niveauRisque", e.target.value)}>
-          <option value="!= RE">Hors Relation d'Affaires (Standard)</option>
+          <option value="!=">Hors Relation d'Affaires (Standard)</option>
           <option value="RE">En Relation d'Affaires (Renforcé)</option>
         </Field>
         <Field label="Type d'opération simulée" as="select" value={form.typeOperation} onChange={e => set("typeOperation", e.target.value)}>
@@ -543,9 +584,6 @@ const HistoryPanel = ({ history }) => {
     </div>
   )
 }
-
-
-// ─── ATOMIC HELPER COMPONENTS ─────────────────────────────────────────────────── 
 
 const Field = ({ label, as = 'input', ...props }) => {
   const InputComponent = as;

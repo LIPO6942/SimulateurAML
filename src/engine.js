@@ -3,215 +3,99 @@
 const GROUPE = {
   faible: ["élève", "etudiant", "étudiant", "sans profession", "travailleur indépendant", "travailleur independant"],
   moyen:  ["salarié", "salarie", "fonctionnaire"],
-  elevé:  ["pm", "chef d'entreprise", "chef dentreprise", "profession libérale", "profession liberale"],
+  eleve:  ["pm", "chef d'entreprise", "chef dentreprise", "profession libérale", "profession liberale"],
 };
 
 export function getGroupe(activite) {
-  const a = activite.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  if (GROUPE.faible.some(x => a.includes(x.normalize("NFD").replace(/[\u0300-\u036f]/g, "")))) return "faible";
-  if (GROUPE.elevé.some(x => a.includes(x.normalize("NFD").replace(/[\u0300-\u036f]/g, "")))) return "elevé";
-  return "moyen";
+   const a = activite.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+   if (GROUPE.faible.some(x => a.includes(x.normalize("NFD").replace(/[\u0300-\u036f]/g, "")))) return "faible";
+   if (GROUPE.eleve.some(x => a.includes(x.normalize("NFD").replace(/[\u0300-\u036f]/g, "")))) return "eleve";
+   return "moyen";
+ }
+
+ export const SEUILS = {
+    ind3: {
+        faible: { "!=": 50000, "RE": 30000 },
+        moyen: { "!=": 150000, "RE": 40000 },
+        eleve: { "!=": 500000, "RE": 200000 },
+    },
+    ind4: {
+        faible: { "!=": 5000, "RE": 3000 },
+        moyen: { "!=": 15000, "RE": 4000 },
+        eleve: { "!=": 50000, "RE": 20000 },
+    },
+    ind5: {
+        faible: { "!=": 25000, "RE": 15000 },
+        moyen: { "!=": 75000, "RE": 20000 },
+        eleve: { "!=": 250000, "RE": 100000 },
+    },
+    ind6: {
+      "faible": 2,
+      "moyen": 2,
+      "eleve": 1.25
+    },
+    ind12: {
+      seuil: 3000
+    }
 }
 
-export const SEUILS = {
-  ind3: {
-    faible: { "!= RE": 50000,  "RE": 30000  },
-    moyen:  { "!= RE": 150000, "RE": 40000  },
-    elevé:  { "!= RE": 500000, "RE": 200000 },
-  },
-  ind4: {
-    faible: { "!= RE": 1000, "RE": 400  },
-    moyen:  { "!= RE": 2500, "RE": 1000 },
-    elevé:  { "!= RE": 6000, "RE": 3000 },
-  },
-  ind5: {
-    faible: { "!= RE": 20000,  "RE": 10000 },
-    moyen:  { "!= RE": 30000,  "RE": 15000 },
-    elevé:  { "!= RE": 100000, "RE": 50000 },
-  },
-  ind6: { "!= RE": 2, "RE": 1.25 },
-};
+function genererResultat(id, alerte, gravite, label, regle, valeurs, seuil, detail = "") {
+  return { id, alerte, gravite, label, regle, valeurs, seuil, detail };
+}
 
 export function evaluerIndicateurs(c) {
-  const groupe = getGroupe(c.activite);
-  const re = c.niveauRisque;
-  const fmt = (n) => n.toLocaleString("fr-TN") + " DT";
-  const results = [];
+    const groupe = getGroupe(c.activite);
+    let resultats = [];
 
-  // IND 1 — Souscription produit Vie + risque élevé
-  const i1 = c.typeOperation === "souscription" && c.produitVie && c.niveauRisqueElevé;
-  results.push({
-    id: 1,
-    label: "Souscription contrat Vie par client à risque élevé",
-    regle: "Opération = Souscription ET Produit = Vie ET Niveau risque = Élevé",
-    valeurs: `Produit Vie: ${c.produitVie ? "Oui" : "Non"} | Risque élevé: ${c.niveauRisqueElevé ? "Oui" : "Non"}`,
-    seuil: "Tout cas vérifié → alerte",
-    alerte: i1,
-    gravite: "haute",
-    detail: i1 ? "Conditions réunies → ALERTE" : "Conditions non réunies → OK",
-  });
+    // Indicateur 1
+    const ind1_alerte = c.produitVie && c.niveauRisqueElevé;
+    resultats.push(genererResultat(1, ind1_alerte, 'moyenne', 'Produit Vie + Risque Élevé', 'Souscription produit de vie ET client classé à risque élevé', `Produit vie: ${c.produitVie}, Risque élevé: ${c.niveauRisqueElevé}`, 'Les 2 vrais', ''));
 
-  // IND 2 — Pays GAFI
-  results.push({
-    id: 2,
-    label: "Client ressortissant d'un pays liste GAFI",
-    regle: "Nationalité ou résidence dans un pays liste GAFI",
-    valeurs: `Pays GAFI: ${c.paysGafi ? "Oui" : "Non"}`,
-    seuil: "Tout client GAFI → alerte",
-    alerte: c.paysGafi,
-    gravite: "critique",
-    detail: c.paysGafi ? "Client GAFI → ALERTE" : "Hors GAFI → OK",
-  });
+    // Indicateur 2
+    resultats.push(genererResultat(2, c.paysGafi, 'critique', 'Pays Liste GAFI', 'Client est résident d'un pays sur la liste du GAFI', `Pays GAFI: ${c.paysGafi}`, 'Vrai', ''));
 
-  // IND 3 — Capital assuré
-  if (c.typeOperation === "souscription") {
-    const seuil = SEUILS.ind3[groupe][re];
-    const a = c.capitalAssure > seuil;
-    results.push({
-      id: 3,
-      label: "Capital assuré supérieur au seuil selon profil",
-      regle: `Souscription + Capital > seuil (groupe: ${groupe}, risque: ${re})`,
-      valeurs: `Capital saisi: ${fmt(c.capitalAssure)}`,
-      seuil: `Seuil: ${fmt(seuil)}`,
-      alerte: a,
-      gravite: re === "RE" ? "haute" : "critique",
-      detail: `${fmt(c.capitalAssure)} ${a ? ">" : "≤"} ${fmt(seuil)} → ${a ? "ALERTE" : "OK"}`,
-    });
-  }
+    // Indicateur 3
+    const seuil3 = SEUILS.ind3[groupe]?.[c.niveauRisque];
+    const ind3_alerte = c.typeOperation === 'souscription' && c.capitalAssure > seuil3;
+    resultats.push(genererResultat(3, ind3_alerte, 'haute', 'Capital Assuré Élevé', 'Capital assuré > Seuil selon profil', `${c.capitalAssure?.toLocaleString('fr-TN')} DT`, `> ${seuil3?.toLocaleString('fr-TN')} DT`, `Groupe: ${groupe}, Risque: ${c.niveauRisque}`));
 
-  // IND 4 — Prime
-  if (c.typeOperation === "souscription") {
-    const seuil = SEUILS.ind4[groupe][re];
-    const a = c.prime > seuil;
-    results.push({
-      id: 4,
-      label: "Prime supérieure au seuil selon profil",
-      regle: `Souscription + Prime > seuil (groupe: ${groupe}, risque: ${re})`,
-      valeurs: `Prime saisie: ${fmt(c.prime)}`,
-      seuil: `Seuil: ${fmt(seuil)}`,
-      alerte: a,
-      gravite: re === "RE" ? "haute" : "critique",
-      detail: `${fmt(c.prime)} ${a ? ">" : "≤"} ${fmt(seuil)} → ${a ? "ALERTE" : "OK"}`,
-    });
-  }
+    // Indicateur 4
+    const seuil4 = SEUILS.ind4[groupe]?.[c.niveauRisque];
+    const ind4_alerte = c.typeOperation === 'souscription' && c.prime > seuil4;
+    resultats.push(genererResultat(4, ind4_alerte, 'moyenne', 'Prime Anormale', 'Prime versée > Seuil selon profil', `${c.prime?.toLocaleString('fr-TN')} DT`, `> ${seuil4?.toLocaleString('fr-TN')} DT`, `Groupe: ${groupe}, Risque: ${c.niveauRisque}`));
 
-  // IND 5 — Rachat
-  if (c.typeOperation === "rachat") {
-    const seuil = SEUILS.ind5[groupe][re];
-    const a = c.valeurRachat > seuil;
-    results.push({
-      id: 5,
-      label: "Valeur rachat supérieure au seuil selon profil",
-      regle: `Rachat + Valeur > seuil (groupe: ${groupe}, risque: ${re})`,
-      valeurs: `Valeur rachat: ${fmt(c.valeurRachat)}`,
-      seuil: `Seuil: ${fmt(seuil)}`,
-      alerte: a,
-      gravite: re === "RE" ? "haute" : "critique",
-      detail: `${fmt(c.valeurRachat)} ${a ? ">" : "≤"} ${fmt(seuil)} → ${a ? "ALERTE" : "OK"}`,
-    });
-  }
+    // Indicateur 5
+    const seuil5 = SEUILS.ind5[groupe]?.[c.niveauRisque];
+    const ind5_alerte = c.typeOperation === 'rachat' && c.valeurRachat > seuil5;
+    resultats.push(genererResultat(5, ind5_alerte, 'haute', 'Rachat Important', 'Valeur de rachat > Seuil selon profil', `${c.valeurRachat?.toLocaleString('fr-TN')} DT`, `> ${seuil5?.toLocaleString('fr-TN')} DT`, `Groupe: ${groupe}, Risque: ${c.niveauRisque}`));
+    
+    // Indicateur 6
+    const ratio6 = SEUILS.ind6[groupe];
+    const ind6_alerte = c.augmentationCapital >= ratio6;
+    resultats.push(genererResultat(6, ind6_alerte, 'haute', 'Augmentation de Capital', 'Augmentation de capital > Ratio selon profil', `Ratio: x${c.augmentationCapital}`, `> x${ratio6}`, `Groupe: ${groupe}`));
 
-  // IND 6 — Augmentation capitaux
-  if (c.augmentationCapital > 0) {
-    const seuil = SEUILS.ind6[re];
-    const a = c.augmentationCapital > seuil;
-    results.push({
-      id: 6,
-      label: "Augmentation des capitaux assurés",
-      regle: `Ratio augmentation > ×${seuil} (risque: ${re})`,
-      valeurs: `Ratio: ×${c.augmentationCapital}`,
-      seuil: `Seuil: ×${seuil}`,
-      alerte: a,
-      gravite: "haute",
-      detail: `×${c.augmentationCapital} ${a ? ">" : "≤"} ×${seuil} → ${a ? "ALERTE" : "OK"}`,
-    });
-  }
+    // Indicateur 7
+    resultats.push(genererResultat(7, c.rachatMoins90j, 'critique', 'Rachat Précoce', 'Rachat demandé moins de 90 jours après la souscription', `Rachat < 90j: ${c.rachatMoins90j}`, 'Vrai', ''));
 
-  // IND 7 — Rachat < 90 jours
-  results.push({
-    id: 7,
-    label: "Rachat total ou partiel < 90 jours",
-    regle: "Rachat < 90 jours après souscription",
-    valeurs: `Rachat < 90j: ${c.rachatMoins90j ? "Oui" : "Non"}`,
-    seuil: "90 jours",
-    alerte: c.rachatMoins90j,
-    gravite: "haute",
-    detail: c.rachatMoins90j ? "Délai < 90j → ALERTE" : "Délai ≥ 90j → OK",
-  });
+    // Indicateur 8
+    resultats.push(genererResultat(8, c.beneficiairePaysRisque, 'critique', 'Bénéficiaire à Risque', 'Bénéficiaire est dans un pays à haut risque', `Bénéf. pays risque: ${c.beneficiairePaysRisque}`, 'Vrai', ''));
 
-  // IND 8 — Bénéficiaire pays risque élevé
-  results.push({
-    id: 8,
-    label: "Bénéficiaire dans un pays à risque élevé",
-    regle: "Bénéficiaire résident d'un pays à risque élevé",
-    valeurs: `Bénéficiaire pays risque: ${c.beneficiairePaysRisque ? "Oui" : "Non"}`,
-    seuil: "Tout bénéficiaire pays risque",
-    alerte: c.beneficiairePaysRisque,
-    gravite: "critique",
-    detail: c.beneficiairePaysRisque ? "Bénéficiaire pays risque → ALERTE" : "Bénéficiaire hors zone risque → OK",
-  });
+    // Indicateur 9
+    resultats.push(genererResultat(9, c.changementBeneficiaire, 'moyenne', 'Changement de Bénéficiaire', 'Changements fréquents/injustifiés du bénéficiaire', `Chg bénéficiaire: ${c.changementBeneficiaire}`, 'Vrai', ''));
 
-  // IND 9 — Changement fréquent bénéficiaire
-  results.push({
-    id: 9,
-    label: "Changement fréquent du bénéficiaire",
-    regle: "Modifications répétées du bénéficiaire désigné",
-    valeurs: `Changement fréquent: ${c.changementBeneficiaire ? "Oui" : "Non"}`,
-    seuil: "Tout changement fréquent",
-    alerte: c.changementBeneficiaire,
-    gravite: "haute",
-    detail: c.changementBeneficiaire ? "Changements fréquents → ALERTE" : "Stabilité bénéficiaire → OK",
-  });
+    // Indicateur 10
+    resultats.push(genererResultat(10, c.baytIIcoherent, 'haute', 'Incohérence Bayti II', 'Capital souscrit pour Bayti II incohérent avec le profil', `Incohérence Bayti: ${c.baytIIcoherent}`, 'Vrai', ''));
+    
+    // Indicateur 11
+    resultats.push(genererResultat(11, c.souscriptionsMultiples, 'moyenne', 'Souscriptions Multiples', 'Souscriptions multiples sur une courte période', `Souscriptions mult.: ${c.souscriptionsMultiples}`, 'Vrai', ''));
 
-  // IND 10 — Bayti incohérent
-  results.push({
-    id: 10,
-    label: "Capital Bayti incohérent avec profil client",
-    regle: "Capital produit Bayti ne correspond pas au profil socioéconomique",
-    valeurs: `Incohérence Bayti: ${c.baytIIcoherent ? "Oui" : "Non"}`,
-    seuil: "Incohérence détectée",
-    alerte: c.baytIIcoherent,
-    gravite: "moyenne",
-    detail: c.baytIIcoherent ? "Incohérence détectée → ALERTE" : "Profil cohérent → OK",
-  });
+    // Indicateur 12
+    const seuil12 = SEUILS.ind12.seuil;
+    const ind12_alerte = c.paiementEspeces > seuil12;
+    resultats.push(genererResultat(12, ind12_alerte, 'critique', 'Paiement en Espèces', 'Part du paiement en espèces > Seuil fixe', `${c.paiementEspeces?.toLocaleString('fr-TN')} DT`, `> ${seuil12?.toLocaleString('fr-TN')} DT`, ''));
 
-  // IND 11 — Souscriptions multiples
-  results.push({
-    id: 11,
-    label: "Souscriptions multiples en court délai",
-    regle: "Plusieurs souscriptions dans un court intervalle de temps",
-    valeurs: `Souscriptions multiples: ${c.souscriptionsMultiples ? "Oui" : "Non"}`,
-    seuil: "Toute multiplicité",
-    alerte: c.souscriptionsMultiples,
-    gravite: "haute",
-    detail: c.souscriptionsMultiples ? "Multiplicité détectée → ALERTE" : "Souscription unique → OK",
-  });
+    // Indicateur 13
+    resultats.push(genererResultat(13, c.plusieursComptes, 'moyenne', 'Comptes Multiples', 'Paiement via plusieurs comptes sans justification', `Comptes multiples: ${c.plusieursComptes}`, 'Vrai', ''));
 
-  // IND 12 — Paiement espèces
-  const seuil12 = 3000;
-  const a12 = c.paiementEspeces > seuil12;
-  results.push({
-    id: 12,
-    label: "Paiement en espèces > 3 000 DT",
-    regle: "Règlement cash supérieur au plafond légal",
-    valeurs: `Espèces: ${fmt(c.paiementEspeces)}`,
-    seuil: `Plafond: ${fmt(seuil12)}`,
-    alerte: a12,
-    gravite: "critique",
-    detail: `${fmt(c.paiementEspeces)} ${a12 ? ">" : "≤"} ${fmt(seuil12)} → ${a12 ? "ALERTE" : "OK"}`,
-  });
-
-  // IND 13 — Plusieurs comptes
-  results.push({
-    id: 13,
-    label: "Paiement via plusieurs comptes bancaires",
-    regle: "Fragmentation du paiement sur plusieurs comptes",
-    valeurs: `Plusieurs comptes: ${c.plusieursComptes ? "Oui" : "Non"}`,
-    seuil: "Fragmentation détectée",
-    alerte: c.plusieursComptes,
-    gravite: "moyenne",
-    detail: c.plusieursComptes ? "Fragmentation détectée → ALERTE" : "Compte unique → OK",
-  });
-
-  return results;
+    return resultats;
 }
