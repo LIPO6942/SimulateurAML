@@ -161,16 +161,33 @@ function App() {
   };
 
   const doDeleteClient = async () => {
-    if (!confirmDelete || !confirmDelete.id) return;
-    const idToDelete = confirmDelete.id;
+    // Capturer l'ID pour éviter les effets de bord d'état asynchrone
+    const target = confirmDelete;
     setConfirmDelete(null);
+
+    if (!target || !target.id || String(target.id).trim() === '') {
+      console.error("Tentative de suppression avec un ID invalide:", target);
+      setGlobalError(`Erreur: Identifiant client invalide (${JSON.stringify(target?.id)})`);
+      return;
+    }
+
+    const idToDelete = String(target.id).trim();
     setGlobalError(null);
+
     try {
-      await deleteDoc(doc(db, 'clients', idToDelete));
-      await deleteDoc(doc(db, 'simResults', idToDelete));
+      console.log("Suppression du client:", idToDelete);
+      // Utilisation explicite du chemin complet pour éviter toute ambiguïté
+      await deleteDoc(doc(db, "clients", idToDelete));
+      await deleteDoc(doc(db, "simResults", idToDelete));
+
+      // Si c'était le client sélectionné, on déselectionne
+      if (selId === idToDelete) {
+        setSelId(null);
+        setForm(null);
+      }
     } catch (e) {
-      console.error("Error deleting client: ", e);
-      setGlobalError(`Erreur de suppression: ${e.message} (ID: ${idToDelete})`);
+      console.error("Erreur Firestore lors de la suppression:", e);
+      setGlobalError(`Erreur de suppression: ${e.message} (ID: ${JSON.stringify(idToDelete)})`);
     }
   };
 
@@ -502,7 +519,7 @@ const HistoryPanel = ({ history }) => {
   if (history.length === 0) return (
     <div className="empty-state">
       <h3>Aucune simulation dans l'historique.</h3>
-      <p>Lancez une simulation depuis l'onglet "Profil client" pour la voir apparaître ici.</p>
+      <p>Lancez une simulation depuis l'onglet "Simulation d'alerte" ou "Vue globale" pour la voir apparaître ici.</p>
     </div>
   );
 
