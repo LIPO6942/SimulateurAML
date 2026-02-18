@@ -52,7 +52,7 @@ export function evaluerIndicateurs(c) {
     resultats.push(genererResultat(1, ind1_alerte, 'moyenne', 'Produit Vie + Risque Élevé', 'Souscription produit de vie ET client classé à risque élevé', `Produit vie: ${c.produitVie}, Risque élevé: ${c.niveauRisqueElevé}`, 'Les 2 vrais', ''));
 
     // Indicateur 2
-    resultats.push(genererResultat(2, c.paysGafi, 'critique', 'Pays Liste GAFI', 'Client est résident d'un pays sur la liste du GAFI', `Pays GAFI: ${c.paysGafi}`, 'Vrai', ''));
+    resultats.push(genererResultat(2, c.paysGafi, 'critique', 'Pays Liste GAFI', "Client est résident d'un pays sur la liste du GAFI", `Pays GAFI: ${c.paysGafi}`, 'Vrai', ''));
 
     // Indicateur 3
     const seuil3 = SEUILS.ind3[groupe]?.[c.niveauRisque];
