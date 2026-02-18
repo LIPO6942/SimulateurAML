@@ -98,7 +98,10 @@ function App() {
     }
 
     const unsubscribeClients = onSnapshot(collection(db, 'clients'),
-      snapshot => setClients(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))),
+      snapshot => setClients(snapshot.docs.map(doc => {
+        const data = doc.data();
+        return { ...data, id: doc.id }; // L'ID Firestore gagne toujours sur le champ 'id' éventuel de la data
+      })),
       err => handleSnapshotError(err, 'clients')
     );
     const unsubscribeHistory = onSnapshot(collection(db, 'history'),
@@ -145,7 +148,13 @@ function App() {
   const addClient = async () => {
     setGlobalError(null);
     try {
-      const newClient = { ...CLIENT_VIDE, nom: `Nouveau client ${clients.length + 1}`, createdAt: new Date().toISOString() };
+      // S'assurer qu'on ne stocke pas de champ 'id' à l'intérieur du document
+      const { id, ...cleanData } = CLIENT_VIDE;
+      const newClient = {
+        ...cleanData,
+        nom: `Nouveau client ${clients.length + 1}`,
+        createdAt: new Date().toISOString()
+      };
       const docRef = await addDoc(collection(db, 'clients'), newClient);
       selectClient({ id: docRef.id, ...newClient });
     } catch (e) {
@@ -193,10 +202,12 @@ function App() {
 
   const debouncedUpdate = useMemo(() =>
     debounce(async (id, field, value) => {
-      if (!id) return;
+      if (!id || String(id).trim() === "") return;
       setGlobalError(null);
       try {
-        const docRef = doc(db, 'clients', id);
+        const docRef = doc(db, 'clients', String(id).trim());
+        // Ne jamais mettre à jour le champ 'id' lui-même dans le document
+        if (field === 'id') return;
         await updateDoc(docRef, { [field]: value });
       } catch (e) {
         console.error("Error updating client: ", e);
@@ -626,13 +637,9 @@ const AlertSimPanel = ({ activeClient, selId, updateField, addClient, lancerHist
     if (selId) return; // Déjà enregistré
     setIsSaving(true);
     try {
-      // Pour forcer l'enregistrement d'un nouveau client avec les données actuelles
-      // On peut modifier addClient pour accepter un profil initial
-      // Mais ici on va faire simple : addClient crée un client vide, puis on le mettra à jour.
-      // OU on crée une fonction d'enregistrement direct.
-
-      // Note: On utilise ici les données locales du simulateur
-      const clientToSave = { ...localProfil, createdAt: new Date().toISOString() };
+      // Nettoyage de l'ID éventuel dans le profil local avant ajout
+      const { id, ...cleanData } = localProfil;
+      const clientToSave = { ...cleanData, createdAt: new Date().toISOString() };
       if (!clientToSave.nom) clientToSave.nom = "Nouveau client";
 
       const docRef = await addDoc(collection(db, 'clients'), clientToSave);
