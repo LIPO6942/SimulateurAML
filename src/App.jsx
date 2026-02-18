@@ -1,71 +1,137 @@
-import { useState, useEffect, useCallback } from "react";
-import { evaluerIndicateurs, getGroupe, SEUILS } from "./engine.js";
-import { EXEMPLES_CLIENTS, CLIENT_VIDE } from "./data.js";
-import "./styles.css";
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { db } from './firebase.js';
+import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, setDoc, writeBatch } from 'firebase/firestore';
+import { evaluerIndicateurs, getGroupe, SEUILS } from './engine.js';
+import { EXEMPLES_CLIENTS, CLIENT_VIDE } from './data.js';
+import './styles.css';
+import { debounce } from 'lodash';
 
 // ─── MAIN APP COMPONENT ─────────────────────────────────────────────────────────── 
 export default function App() {
 
   // ─── STATES ─────────────────────────────────────────────────────────────────── 
-  const [clients, setClients] = useState(EXEMPLES_CLIENTS);
-  const [selId, setSelId]     = useState(clients.length > 0 ? clients[0].id : null);
-  const [form, setForm]       = useState(clients.length > 0 ? { ...clients[0] } : null);
-  const [tab, setTab]         = useState("form");
+  const [clients, setClients] = useState([]);
+  const [history, setHistory] = useState([]);
   const [simResults, setSimResults] = useState({});
-  const [theme, setTheme] = useState("dark");
+  const [theme, setTheme] = useState("dark"); // Theme is local, not synced
+
+  const [selId, setSelId] = useState(null);
+  const [form, setForm] = useState(null);
+  const [tab, setTab] = useState("form");
+
+  // ─── DATA SYNCING w/ FIREBASE ───────────────────────────────────────────────────
+  useEffect(() => {
+    // Sync clients
+    const unsubscribeClients = onSnapshot(collection(db, 'clients'), snapshot => {
+      const clientsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setClients(clientsData);
+      if (clientsData.length > 0 && !snapshot.docs.find(doc => doc.id === selId)) {
+        selectClient(clientsData[0]);
+      }
+    });
+
+    // Sync history
+    const unsubscribeHistory = onSnapshot(collection(db, 'history'), snapshot => {
+      const historyData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+      setHistory(historyData);
+    });
+
+    // Sync sim results
+    const unsubscribeResults = onSnapshot(collection(db, 'simResults'), snapshot => {
+      const resultsData = {};
+      snapshot.docs.forEach(doc => { resultsData[doc.id] = doc.data().results; });
+      setSimResults(resultsData);
+    });
+
+    return () => {
+      unsubscribeClients();
+      unsubscribeHistory();
+      unsubscribeResults();
+    };
+  }, [selId]);
 
   // ─── THEME LOGIC ──────────────────────────────────────────────────────────────
   const toggleTheme = () => setTheme(p => p === 'light' ? 'dark' : 'light');
   useEffect(() => { document.body.setAttribute('data-theme', theme); }, [theme]);
 
   // ─── CLIENT & FORM MANAGEMENT ─────────────────────────────────────────────────
-  const selectClient = useCallback((c) => { 
-    setSelId(c.id); 
-    setForm({ ...c }); 
-    setTab("form"); 
+  const selectClient = useCallback((c) => {
+    if (!c) return;
+    setSelId(c.id);
+    setForm({ ...c });
+    setTab("form");
   }, []);
 
   useEffect(() => {
-    if (clients.length > 0 && !clients.find(c => c.id === selId)) {
+    if (clients.length > 0 && !selId) {
       selectClient(clients[0]);
-    }
-    if (clients.length === 0) {
+    } else if (clients.length > 0 && selId) {
+      const selectedInList = clients.find(c => c.id === selId);
+      if(selectedInList) setForm(selectedInList);
+      else selectClient(clients[0])
+    } else if (clients.length === 0) {
       setForm(null);
       setSelId(null);
     }
   }, [clients, selId, selectClient]);
-
-  const addClient = () => {
-    const newId = `CLI-${Date.now()}`;
-    const nc = { ...CLIENT_VIDE, id: newId, nom: `Nouveau client` };
-    setClients(p => [nc, ...p]);
-    selectClient(nc);
+  
+  const addClient = async () => {
+    const newClient = { ...CLIENT_VIDE, nom: `Nouveau client`, createdAt: new Date().toISOString() };
+    const docRef = await addDoc(collection(db, 'clients'), newClient);
+    selectClient({ id: docRef.id, ...newClient });
   };
 
-  const deleteClient = (e, idToDelete) => {
+  const deleteClient = async (e, idToDelete) => {
     e.stopPropagation();
     if (window.confirm("Êtes-vous sûr de vouloir supprimer ce client ?")) {
-      setClients(p => p.filter(c => c.id !== idToDelete));
-      setSimResults(p => { const { [idToDelete]: _, ...rest } = p; return rest; });
+      await deleteDoc(doc(db, 'clients', idToDelete));
+      await deleteDoc(doc(db, 'simResults', idToDelete)); // Clean up results
     }
   };
 
+  const debouncedUpdate = useMemo(() => 
+    debounce(async (id, field, value) => {
+      const docRef = doc(db, 'clients', id);
+      await updateDoc(docRef, { [field]: value });
+    }, 500),[]);
+
   const updateFormField = (key, value) => {
-    const newForm = { ...form, [key]: value };
-    setForm(newForm);
-    setClients(p => p.map(c => c.id === form.id ? newForm : c));
+    setForm(prevForm => {
+      const newForm = { ...prevForm, [key]: value };
+      debouncedUpdate(newForm.id, key, value);
+      return newForm;
+    });
   };
 
   // ─── SIMULATION ENGINE ────────────────────────────────────────────────────────
-  const lancerSim = () => {
-    setSimResults(p => ({ ...p, [form.id]: evaluerIndicateurs(form) }));
+  const lancerSim = async () => {
+    const results = evaluerIndicateurs(form);
+    await setDoc(doc(db, 'simResults', form.id), { results });
+    await addDoc(collection(db, 'history'), {
+      clientId: form.id,
+      clientName: form.nom,
+      timestamp: new Date().toISOString(),
+      results
+    });
     setTab("resultats");
   };
 
-  const runAll = () => {
-    const all = {};
-    clients.forEach(c => { all[c.id] = evaluerIndicateurs(c); });
-    setSimResults(all);
+  const runAll = async () => {
+    const batch = writeBatch(db);
+    clients.forEach(c => {
+      const results = evaluerIndicateurs(c);
+      const resRef = doc(db, "simResults", c.id);
+      batch.set(resRef, { results });
+
+      const histRef = doc(collection(db, "history"));
+      batch.set(histRef, { 
+        clientId: c.id, 
+        clientName: c.nom,
+        timestamp: new Date().toISOString(),
+        results
+      });
+    });
+    await batch.commit();
   };
 
   // ─── DERIVED DATA & HELPERS ───────────────────────────────────────────────────
@@ -78,25 +144,22 @@ export default function App() {
     return "cli-dot d-med";
   };
 
-  const curInds   = selId ? simResults[selId] : null;
+  const curInds = selId ? simResults[selId] : null;
   const curAlerts = curInds ? curInds.filter(x => x.alerte) : [];
-  const grp       = form ? getGroupe(form.activite) : null;
+  const grp = form ? getGroupe(form.activite) : null;
 
   // ─── RENDER ─────────────────────────────────────────────────────────────────────
   return (
     <div className="app">
-
       <Header theme={theme} toggleTheme={toggleTheme} />
-
-      <Sidebar 
-        clients={clients} 
-        selId={selId} 
-        selectClient={selectClient} 
-        addClient={addClient} 
+      <Sidebar
+        clients={clients}
+        selId={selId}
+        selectClient={selectClient}
+        addClient={addClient}
         deleteClient={deleteClient}
         getDot={getDot}
       />
-
       <main className="main">
         {clients.length > 0 && form ? (
           <>
@@ -104,12 +167,13 @@ export default function App() {
               <Tab id="form" label="Profil client" currentTab={tab} setTab={setTab} />
               <Tab id="resultats" label={`Résultats ${curInds ? `· ${curAlerts.length} alerte${curAlerts.length !== 1 ? "s" : ""}`:""}`} currentTab={tab} setTab={setTab} />
               <Tab id="global" label="Vue globale" currentTab={tab} setTab={setTab} />
+              <Tab id="history" label={`Historique (${history.length})`} currentTab={tab} setTab={setTab} />
             </div>
-
             <div className="cnt">
-              {tab === "form"      && <FormPanel form={form} updateField={updateFormField} grp={grp} lancerSim={lancerSim} />}
+              {tab === "form" && <FormPanel form={form} updateField={updateFormField} grp={grp} lancerSim={lancerSim} />}
               {tab === "resultats" && <ResultPanel results={curInds} client={form} />}
-              {tab === "global"    && <GlobalPanel clients={clients} results={simResults} runAll={runAll} selectClient={selectClient} setTab={setTab} />}
+              {tab === "global" && <GlobalPanel clients={clients} results={simResults} runAll={runAll} selectClient={selectClient} setTab={setTab} />}
+              {tab === "history" && <HistoryPanel history={history} />}
             </div>
           </>
         ) : (
@@ -120,18 +184,18 @@ export default function App() {
   );
 }
 
-// ─── SUB-COMPONENTS ─────────────────────────────────────────────────────────────── 
+// ... (Le reste des sous-composants reste quasi-identique) ...
 
 const Header = ({ theme, toggleTheme }) => (
   <header className="hdr">
     <div className="hdr-ico">M</div>
     <div>
       <div className="hdr-t">RegTools — Monitoring LCB-FT</div>
-      <div className="hdr-s">Simulation & Backtesting</div>
+      <div className="hdr-s">Plateforme Collaborative en Temps Réel</div>
     </div>
     <div className="hdr-r">
       <span className="pill pill-b">13 indicateurs</span>
-      <span className="pill pill-g">Moteur actif</span>
+      <span className="pill pill-g">Cloud Sync</span>
       <button className="theme-toggle" onClick={toggleTheme} title="Changer de thème">
         {theme === 'light' ? '🌙' : '☀️'}
       </button>
@@ -150,7 +214,7 @@ const Sidebar = ({ clients, selId, selectClient, addClient, deleteClient, getDot
           <div className="cli-av">{c.nom.charAt(0).toUpperCase()}</div>
           <div className="cli-info">
             <div className="cli-nm">{c.nom}</div>
-            <div className="cli-id">{c.id} · {c.activite}</div>
+            <div className="cli-id">{c.id}</div>
           </div>
           <div className={getDot(c.id)} />
           <button className="cli-del" onClick={(e) => deleteClient(e, c.id)} title="Supprimer client">🗑️</button>
@@ -167,15 +231,14 @@ const Tab = ({ id, label, currentTab, setTab }) => (
 
 const WelcomePanel = ({ addClient }) => (
   <div className="welcome-panel">
-    <h2>Bienvenue sur RegTools</h2>
-    <p>Aucun client dans votre portefeuille pour le moment.</p>
-    <button className="run" onClick={addClient}>+ Créer votre premier client</button>
+    <h2>Bienvenue sur votre plateforme collaborative</h2>
+    <p>Aucun client dans le portefeuille. Les données sont synchronisées en temps réel pour tous les utilisateurs.</p>
+    <button className="run" onClick={addClient}>+ Créer le premier client</button>
   </div>
 );
 
 const FormPanel = ({ form, updateField, grp, lancerSim }) => {
   const [showAdvanced, setShowAdvanced] = useState(false);
-
   const set = (k, v) => updateField(k, v);
   
   return (
@@ -184,7 +247,6 @@ const FormPanel = ({ form, updateField, grp, lancerSim }) => {
         <div className="panel-t">Dossier Client</div>
         <button className="run" onClick={lancerSim}>▶ Lancer la simulation</button>
       </div>
-
       <div className="sec">Informations générales</div>
       <div className="fg2">
         <Field label="Nom complet" placeholder="Prénom Nom" value={form.nom} onChange={e => set("nom", e.target.value)} />
@@ -200,7 +262,6 @@ const FormPanel = ({ form, updateField, grp, lancerSim }) => {
           <option value="rachat">Rachat</option>
         </Field>
       </div>
-
       <div className="sec">Scénarios & Montants</div>
       <div className="seuil-box">
         <Tooltip text="Catégorie de client basée sur l'activité, influence les seuils d'alerte.">Groupe activité: <strong>{grp.toUpperCase()}</strong></Tooltip>
@@ -217,11 +278,9 @@ const FormPanel = ({ form, updateField, grp, lancerSim }) => {
         <Field label="Prime versée (DT)" type="number" value={form.prime} onChange={e => set("prime", +e.target.value)} />
         <Field label="Valeur de rachat (DT)" type="number" value={form.valeurRachat} onChange={e => set("valeurRachat", +e.target.value)} />
       </div>
-
       <div className="sec-toggle" onClick={() => setShowAdvanced(!showAdvanced)}>
         <span>{showAdvanced ? '▼' : '▶'} Indicateurs avancés & spécifiques</span>
       </div>
-      
       {showAdvanced && (
         <div className="advanced-grid">
           <Toggle k="produitVie" l="Ind. 1 — Souscription produit Vie" v={form.produitVie} set={set} />
@@ -248,18 +307,12 @@ const ResultPanel = ({ results, client }) => {
       <p>Allez dans l'onglet "Profil client" et cliquez sur "Lancer la simulation".</p>
     </div>
   );
-
   const alerts = results.filter(r => r.alerte);
-  const verdictMap = {
-    critique: { label: "CRITIQUE", chip: "c-red" },
-    haute: { label: "HAUTE", chip: "c-ora" },
-    moyenne: { label: "MOYENNE", chip: "c-yel" }
-  };
   const getVerdict = () => {
-    if(alerts.length === 0) return null;
-    if(alerts.some(a => a.gravite === 'critique')) return verdictMap.critique;
-    if(alerts.some(a => a.gravite === 'haute')) return verdictMap.haute;
-    return verdictMap.moyenne;
+    if(alerts.length === 0) return { label: "Conforme", chip: "c-grn" };
+    if(alerts.some(a => a.gravite === 'critique')) return { label: "Critique", chip: "c-red" };
+    if(alerts.some(a => a.gravite === 'haute')) return { label: "Haute", chip: "c-ora" };
+    return { label: "Moyenne", chip: "c-yel" };
   }
   const verdict = getVerdict();
 
@@ -275,14 +328,10 @@ const ResultPanel = ({ results, client }) => {
           <div className="vd-nm">{client.nom}</div>
           <div className="vd-meta">{client.id} · {client.activite} · {client.niveauRisque}</div>
           <div className="vd-chips">
-            {alerts.length === 0 
-              ? <span className="chip c-grn">✓ Aucune alerte détectée</span>
-              : <span className={`chip ${verdict.chip}`}>Risque Global: {verdict.label}</span>
-            }
+             <span className={`chip ${verdict.chip}`}>Risque Global: {verdict.label}</span>
           </div>
         </div>
       </div>
-
       <table className="ind-table">
         <thead><tr><th>#</th><th>Indicateur</th><th>Valeur(s)</th><th>Seuil</th><th style={{textAlign:"center"}}>Verdict</th></tr></thead>
         <tbody>
@@ -361,6 +410,59 @@ const GlobalPanel = ({ clients, results, runAll, selectClient, setTab }) => {
   );
 };
 
+const HistoryPanel = ({ history }) => {
+  if (history.length === 0) return (
+    <div className="empty-state">
+      <h3>Aucune simulation dans l'historique.</h3>
+      <p>Lancez une simulation depuis l'onglet "Profil client" pour la voir apparaître ici.</p>
+    </div>
+  );
+
+  return (
+    <div>
+      <div className="panel-t">Historique des simulations</div>
+      <table className="btch-table">
+        <thead>
+          <tr>
+            <th>Date & Heure</th>
+            <th>Client</th>
+            <th style={{textAlign:"center"}}># Alertes</th>
+            <th style={{textAlign:"center"}}>Verdict</th>
+          </tr>
+        </thead>
+        <tbody>
+          {history.map(h => {
+            const alerts = h.results.filter(r => r.alerte);
+            const getVerdict = () => {
+              if (alerts.length === 0) return { label: '✓ Conforme', class: 'v-OK' };
+              if (alerts.some(x => x.gravite === "critique")) return { label: '⚠ Critique', class: 'v-ALERTE g-c' };
+              if (alerts.some(x => x.gravite === "haute")) return { label: '⚠ Haute', class: 'v-ALERTE g-h' };
+              return { label: 'Moyenne', class: 'v-ALERTE g-m' };
+            };
+            const v = getVerdict();
+
+            return (
+              <tr key={h.id}>
+                 <td>
+                  <div className="cli-nm">{new Date(h.timestamp).toLocaleString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour:'2-digit', minute:'2-digit' })}</div>
+                </td>
+                <td>
+                  <div className="cli-nm">{h.clientName}</div>
+                  <div className="cli-id">{h.clientId}</div>
+                </td>
+                <td style={{ textAlign:"center", fontFamily:"'IBM Plex Mono', monospace", fontSize:15, fontWeight:700, color: alerts.length === 0 ? "var(--text-success)" : "var(--text-danger)" }}>
+                  {alerts.length}
+                </td>
+                <td style={{ textAlign: "center" }}><span className={v.class}>{v.label}</span></td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 
 // ─── ATOMIC HELPER COMPONENTS ─────────────────────────────────────────────────── 
 
@@ -381,12 +483,19 @@ const Toggle = ({ k, l, v, set }) => (
   </div>
 );
 
-const Tooltip = ({ children, text }) => (
-  <span className="tooltip-container">
-    {children}
-    <span className="tooltip-text">{text}</span>
-  </span>
-);
+const Tooltip = ({ children, text }) => {
+  const [isHovering, setIsHovering] = useState(false);
+  return (
+    <span 
+      className="tooltip-container"
+      onMouseEnter={() => setIsHovering(true)}
+      onMouseLeave={() => setIsHovering(false)}
+    >
+      {children}
+      {isHovering && <span className="tooltip-text">{text}</span>}
+    </span>
+  );
+};
 
 const StatBox = ({ label, value, color = 'var(--text-accent)' }) => (
   <div className="st">
