@@ -161,7 +161,7 @@ function App() {
   };
 
   const doDeleteClient = async () => {
-    if (!confirmDelete) return;
+    if (!confirmDelete || !confirmDelete.id) return;
     const idToDelete = confirmDelete.id;
     setConfirmDelete(null);
     setGlobalError(null);
@@ -170,7 +170,7 @@ function App() {
       await deleteDoc(doc(db, 'simResults', idToDelete));
     } catch (e) {
       console.error("Error deleting client: ", e);
-      setGlobalError(`Erreur de suppression: ${e.message}`);
+      setGlobalError(`Erreur de suppression: ${e.message} (ID: ${idToDelete})`);
     }
   };
 
@@ -392,7 +392,7 @@ const ResultPanel = ({ results, client }) => {
   if (!results) return (
     <div className="empty-state">
       <h3>Aucune simulation lancée pour ce client.</h3>
-      <p>Allez dans l'onglet "Profil client" et cliquez sur "Lancer la simulation".</p>
+      <p>Allez dans l'onglet "Simulation d'alerte" et cliquez sur "Lancer le Test".</p>
     </div>
   );
   const alerts = results.filter(r => r.alerte);
