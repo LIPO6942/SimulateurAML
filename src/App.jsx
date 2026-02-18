@@ -1,13 +1,86 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { db } from './firebase.js';
 import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, setDoc, writeBatch } from 'firebase/firestore';
+import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { evaluerIndicateurs, getGroupe, SEUILS } from './engine.js';
-import { EXEMPLES_CLIENTS, CLIENT_VIDE } from './data.js';
+import { CLIENT_VIDE } from './data.js';
 import './styles.css';
 import { debounce } from 'lodash';
 
+
+// ─── AUTHENTICATION ───────────────────────────────────────────────────────────────
+
+const auth = getAuth();
+
+const AuthGate = () => {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setUser(user);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  if (loading) {
+    return <div className="loading-screen">Chargement...</div>;
+  }
+
+  return user ? <App /> : <LoginScreen />;
+};
+
+const LoginScreen = () => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState(null);
+
+  const handleSignIn = async (e) => {
+    e.preventDefault();
+    setError(null);
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error) {
+      setError('Email ou mot de passe invalide.');
+      console.error(error)
+    }
+  };
+  
+  const handleSignUp = async () => {
+    setError(null);
+    if(password.length < 6) { 
+        setError('Le mot de passe doit faire au moins 6 caractères.');
+        return;
+    }
+    try {
+      await createUserWithEmailAndPassword(auth, email, password);
+    } catch (error) {
+      setError('Impossible de créer le compte. L\'email est peut-être déjà utilisé ou invalide.');
+      console.error(error)
+    }
+  }
+
+  return (
+    <div className="login-screen">
+      <div className="login-box">
+        <div className="hdr-ico">M</div>
+        <h2>Connexion à RegTools</h2>
+        <p>Veuillez vous connecter pour accéder à la plateforme.</p>
+        <form onSubmit={handleSignIn}>
+          <Field label="Adresse e-mail" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="vous@exemple.com" />
+          <Field label="Mot de passe" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" />
+          {error && <p className="error-msg">{error}</p>}
+          <button type="submit" className="run">Se connecter</button>
+        </form>
+         <p className="signup-text">Pas encore de compte ? <button onClick={handleSignUp} className="link-btn">Créez-en un.</button></p>
+      </div>
+    </div>
+  );
+};
+
 // ─── MAIN APP COMPONENT ─────────────────────────────────────────────────────────── 
-export default function App() {
+function App() {
 
   // ─── STATES ─────────────────────────────────────────────────────────────────── 
   const [clients, setClients] = useState([]);
@@ -21,22 +94,18 @@ export default function App() {
 
   // ─── DATA SYNCING w/ FIREBASE ───────────────────────────────────────────────────
   useEffect(() => {
-    // Sync clients
+    if (!auth.currentUser) return;
+
     const unsubscribeClients = onSnapshot(collection(db, 'clients'), snapshot => {
       const clientsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setClients(clientsData);
-      if (clientsData.length > 0 && !snapshot.docs.find(doc => doc.id === selId)) {
-        selectClient(clientsData[0]);
-      }
     });
 
-    // Sync history
     const unsubscribeHistory = onSnapshot(collection(db, 'history'), snapshot => {
       const historyData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
       setHistory(historyData);
     });
 
-    // Sync sim results
     const unsubscribeResults = onSnapshot(collection(db, 'simResults'), snapshot => {
       const resultsData = {};
       snapshot.docs.forEach(doc => { resultsData[doc.id] = doc.data().results; });
@@ -48,7 +117,7 @@ export default function App() {
       unsubscribeHistory();
       unsubscribeResults();
     };
-  }, [selId]);
+  }, []);
 
   // ─── THEME LOGIC ──────────────────────────────────────────────────────────────
   const toggleTheme = () => setTheme(p => p === 'light' ? 'dark' : 'light');
@@ -67,7 +136,7 @@ export default function App() {
       selectClient(clients[0]);
     } else if (clients.length > 0 && selId) {
       const selectedInList = clients.find(c => c.id === selId);
-      if(selectedInList) setForm(selectedInList);
+      if(selectedInList) setForm(prev => ({...selectedInList, ...prev, id: selectedInList.id}));
       else selectClient(clients[0])
     } else if (clients.length === 0) {
       setForm(null);
@@ -91,11 +160,13 @@ export default function App() {
 
   const debouncedUpdate = useMemo(() => 
     debounce(async (id, field, value) => {
+        if(!id) return;
       const docRef = doc(db, 'clients', id);
       await updateDoc(docRef, { [field]: value });
-    }, 500),[]);
+    }, 400),[]);
 
   const updateFormField = (key, value) => {
+      if(!form) return;
     setForm(prevForm => {
       const newForm = { ...prevForm, [key]: value };
       debouncedUpdate(newForm.id, key, value);
@@ -184,24 +255,34 @@ export default function App() {
   );
 }
 
-// ... (Le reste des sous-composants reste quasi-identique) ...
+// ... (Les autres composants restent les mêmes) ...
 
-const Header = ({ theme, toggleTheme }) => (
-  <header className="hdr">
-    <div className="hdr-ico">M</div>
-    <div>
-      <div className="hdr-t">RegTools — Monitoring LCB-FT</div>
-      <div className="hdr-s">Plateforme Collaborative en Temps Réel</div>
-    </div>
-    <div className="hdr-r">
-      <span className="pill pill-b">13 indicateurs</span>
-      <span className="pill pill-g">Cloud Sync</span>
-      <button className="theme-toggle" onClick={toggleTheme} title="Changer de thème">
-        {theme === 'light' ? '🌙' : '☀️'}
-      </button>
-    </div>
-  </header>
-);
+export default AuthGate;
+
+// Note: Due to the new auth structure, we export AuthGate as the default.
+// The main App component is now rendered by AuthGate when a user is logged in.
+
+const Header = ({ theme, toggleTheme }) => {
+  const user = auth.currentUser;
+  return (
+    <header className="hdr">
+        <div className="hdr-ico">M</div>
+        <div>
+        <div className="hdr-t">RegTools — Monitoring LCB-FT</div>
+        <div className="hdr-s">Plateforme Collaborative en Temps Réel</div>
+        </div>
+        <div className="hdr-r">
+            <div className='user-info'>
+                {user.email}
+            </div>
+            <button onClick={() => signOut(auth)} className='logout-btn'>Déconnexion</button>
+            <button className="theme-toggle" onClick={toggleTheme} title="Changer de thème">
+                {theme === 'light' ? '🌙' : '☀️'}
+            </button>
+        </div>
+    </header>
+  );
+};
 
 const Sidebar = ({ clients, selId, selectClient, addClient, deleteClient, getDot }) => (
   <aside className="sb">
@@ -484,15 +565,10 @@ const Toggle = ({ k, l, v, set }) => (
 );
 
 const Tooltip = ({ children, text }) => {
-  const [isHovering, setIsHovering] = useState(false);
   return (
-    <span 
-      className="tooltip-container"
-      onMouseEnter={() => setIsHovering(true)}
-      onMouseLeave={() => setIsHovering(false)}
-    >
-      {children}
-      {isHovering && <span className="tooltip-text">{text}</span>}
+    <span className="tooltip-container">
+        {children}
+        <span className="tooltip-text">{text}</span>
     </span>
   );
 };
