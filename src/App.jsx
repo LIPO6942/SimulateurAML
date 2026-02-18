@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { evaluerIndicateurs, getGroupe, SEUILS } from "./engine.js";
 import { EXEMPLES_CLIENTS, CLIENT_VIDE } from "./data.js";
 import "./styles.css";
@@ -9,6 +9,16 @@ export default function App() {
   const [form, setForm]       = useState({ ...EXEMPLES_CLIENTS[0] });
   const [tab, setTab]         = useState("form");
   const [simResults, setSimResults] = useState({});
+  const [theme, setTheme] = useState("dark");
+
+  // ── THEME ────────────────────────────────────────────────────────────────────
+  const toggleTheme = () => {
+    setTheme((prevTheme) => (prevTheme === "light" ? "dark" : "light"));
+  };
+
+  useEffect(() => {
+    document.body.setAttribute('data-theme', theme);
+  }, [theme]);
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
   const selectClient = (c) => { setSelId(c.id); setForm({ ...c }); setTab("form"); };
@@ -73,6 +83,9 @@ export default function App() {
         <div className="hdr-r">
           <span className="pill pill-b">13 indicateurs</span>
           <span className="pill pill-g">Moteur actif</span>
+          <button className="theme-toggle" onClick={toggleTheme} title="Changer de thème">
+            {theme === 'light' ? '🌙' : '☀️'}
+          </button>
         </div>
       </header>
 
@@ -125,7 +138,7 @@ export default function App() {
                 <div className="fld">
                   <label>Activité professionnelle</label>
                   <select value={form.activite} onChange={(e) => set("activite", e.target.value)}>
-                    {["élève","étudiant","sans profession","travailleur indépendant","salarié","fonctionnaire","chef d'entreprise","profession libérale","PM"].map((a) => (
+                    {['élève','étudiant','sans profession','travailleur indépendant','salarié','fonctionnaire','chef d\'entreprise','profession libérale','PM'].map((a) => (
                       <option key={a}>{a}</option>
                     ))}
                   </select>
@@ -160,14 +173,14 @@ export default function App() {
 
               <div className="sec">Indicateurs 3, 4, 5 — Montants (seuils calculés en temps réel)</div>
               <div className="seuil-box">
-                Groupe activité: <strong style={{ color: "#4a90e0" }}>{grp.toUpperCase()}</strong>
-                &nbsp;·&nbsp; Risque: <strong style={{ color: "#4a90e0" }}>{form.niveauRisque}</strong>
+                Groupe activité: <strong style={{ color: "var(--text-accent)" }}>{grp.toUpperCase()}</strong>
+                &nbsp;·&nbsp; Risque: <strong style={{ color: "var(--text-accent)" }}>{form.niveauRisque}</strong>
                 &nbsp;&nbsp;|&nbsp;&nbsp;
-                Seuil capital (ind.3): <strong style={{ color: "#60b0ff" }}>{SEUILS.ind3[grp][form.niveauRisque]?.toLocaleString("fr-TN")} DT</strong>
+                Seuil capital (ind.3): <strong style={{ color: "var(--text-accent-hover)" }}>{SEUILS.ind3[grp][form.niveauRisque]?.toLocaleString("fr-TN")} DT</strong>
                 &nbsp;·&nbsp;
-                Seuil prime (ind.4): <strong style={{ color: "#60b0ff" }}>{SEUILS.ind4[grp][form.niveauRisque]?.toLocaleString("fr-TN")} DT</strong>
+                Seuil prime (ind.4): <strong style={{ color: "var(--text-accent-hover)" }}>{SEUILS.ind4[grp][form.niveauRisque]?.toLocaleString("fr-TN")} DT</strong>
                 &nbsp;·&nbsp;
-                Seuil rachat (ind.5): <strong style={{ color: "#60b0ff" }}>{SEUILS.ind5[grp][form.niveauRisque]?.toLocaleString("fr-TN")} DT</strong>
+                Seuil rachat (ind.5): <strong style={{ color: "var(--text-accent-hover)" }}>{SEUILS.ind5[grp][form.niveauRisque]?.toLocaleString("fr-TN")} DT</strong>
               </div>
               <div className="fg3">
                 <div className="fld">
@@ -272,11 +285,11 @@ export default function App() {
                         <tr key={ind.id} className={ind.alerte ? "row-alerte" : ""}>
                           <td><div className="ind-id">{ind.id}</div></td>
                           <td>
-                            <div style={{ fontWeight: 700, color: "#9ab8d8", fontSize: 12, marginBottom: 2 }}>{ind.label}</div>
-                            <div style={{ fontSize: 10, color: "#2a4060", fontFamily: "'IBM Plex Mono', monospace" }}>{ind.regle}</div>
+                            <div style={{ fontWeight: 700, color: "var(--text-secondary)", fontSize: 12, marginBottom: 2 }}>{ind.label}</div>
+                            <div style={{ fontSize: 10, color: "var(--text-placeholder)", fontFamily: "'IBM Plex Mono', monospace" }}>{ind.regle}</div>
                           </td>
                           <td>
-                            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "#6a90b8" }}>{ind.valeurs}</div>
+                            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "var(--text-muted-light)" }}>{ind.valeurs}</div>
                           </td>
                           <td>
                             <div className="seuil-lbl">{ind.seuil}</div>
@@ -312,10 +325,10 @@ export default function App() {
               </div>
 
               <div className="stat-g">
-                <div className="st"><div className="st-v" style={{ color: "#4a90e0" }}>{clients.length}</div><div className="st-l">Clients</div></div>
+                <div className="st"><div className="st-v" style={{ color: "var(--text-accent)" }}>{clients.length}</div><div className="st-l">Clients</div></div>
                 <div className="st"><div className="st-v" style={{ color: "#8070e0" }}>{Object.keys(simResults).length}</div><div className="st-l">Analysés</div></div>
-                <div className="st"><div className="st-v" style={{ color: "#f87060" }}>{Object.values(simResults).filter((r) => r.some((x) => x.alerte && x.gravite === "critique")).length}</div><div className="st-l">Cas critiques</div></div>
-                <div className="st"><div className="st-v" style={{ color: "#f09040" }}>{Object.values(simResults).reduce((s, r) => s + r.filter((x) => x.alerte).length, 0)}</div><div className="st-l">Alertes totales</div></div>
+                <div className="st"><div className="st-v" style={{ color: "var(--text-danger)" }}>{Object.values(simResults).filter((r) => r.some((x) => x.alerte && x.gravite === "critique")).length}</div><div className="st-l">Cas critiques</div></div>
+                <div className="st"><div className="st-v" style={{ color: "var(--text-warning)" }}>{Object.values(simResults).reduce((s, r) => s + r.filter((x) => x.alerte).length, 0)}</div><div className="st-l">Alertes totales</div></div>
               </div>
 
               <table className="btch-table">
@@ -333,22 +346,22 @@ export default function App() {
                     const nb = r ? r.filter((x) => x.alerte).length : null;
                     return (
                       <tr key={c.id} onClick={() => { selectClient(c); if (r) setTab("resultats"); }}>
-                        <td style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: "#2a4060" }}>{c.id}</td>
-                        <td style={{ fontWeight: 700, color: "#9ab8d8" }}>{c.nom}</td>
-                        <td style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: "#3a5878" }}>
-                          {c.activite}<br /><span style={{ color: "#2a4060" }}>gr. {getGroupe(c.activite)}</span>
+                        <td style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: "var(--text-placeholder)" }}>{c.id}</td>
+                        <td style={{ fontWeight: 700, color: "var(--text-secondary)" }}>{c.nom}</td>
+                        <td style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: "var(--text-muted-light)" }}>
+                          {c.activite}<br /><span style={{ color: "var(--text-placeholder)" }}>gr. {getGroupe(c.activite)}</span>
                         </td>
                         <td><span className={`chip ${c.niveauRisque === "RE" ? "c-yel" : "c-grn"}`}>{c.niveauRisque}</span></td>
-                        <td style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: "#3a5878" }}>{c.typeOperation}</td>
-                        <td style={{ textAlign: "center", fontFamily: "'IBM Plex Mono', monospace", fontSize: 15, fontWeight: 700, color: nb === null ? "#2a4060" : nb === 0 ? "#30c070" : "#f87060" }}>
+                        <td style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: "var(--text-muted-light)" }}>{c.typeOperation}</td>
+                        <td style={{ textAlign: "center", fontFamily: "'IBM Plex Mono', monospace", fontSize: 15, fontWeight: 700, color: nb === null ? "var(--text-placeholder)" : nb === 0 ? "var(--text-success)" : "var(--text-danger)" }}>
                           {nb === null ? "—" : nb}
                         </td>
                         <td style={{ textAlign: "center" }}>
                           {!r ? <span className="v-SKIP">non analysé</span>
                             : v === "ok"       ? <span className="v-OK">✓ Conforme</span>
                             : v === "critique" ? <span className="v-ALERTE">⚠ CRITIQUE</span>
-                            : v === "haute"    ? <span style={{ display:"inline-flex", alignItems:"center", gap:5, background:"#2a1000", border:"1px solid #5a2000", borderRadius:7, padding:"5px 12px", fontSize:12, fontFamily:"'IBM Plex Mono',monospace", fontWeight:700, color:"#f09040" }}>⚠ HAUTE</span>
-                            :                    <span style={{ display:"inline-flex", alignItems:"center", gap:5, background:"#2a1800", border:"1px solid #5a3000", borderRadius:7, padding:"5px 12px", fontSize:12, fontFamily:"'IBM Plex Mono',monospace", fontWeight:600, color:"#e0b040" }}>MOYENNE</span>
+                            : v === "haute"    ? <span style={{ display:"inline-flex", alignItems:"center", gap:5, background:"var(--bg-warning)", border:"1px solid var(--border-danger-medium)", borderRadius:7, padding:"5px 12px", fontSize:12, fontFamily:"'IBM Plex Mono',monospace", fontWeight:700, color:"var(--text-warning)" }}>⚠ HAUTE</span>
+                            :                    <span style={{ display:"inline-flex", alignItems:"center", gap:5, background:"var(--bg-warning)", border:"1px solid var(--border-danger-medium)", borderRadius:7, padding:"5px 12px", fontSize:12, fontFamily:"'IBM Plex Mono',monospace", fontWeight:600, color:"var(--text-warning)" }}>MOYENNE</span>
                           }
                         </td>
                       </tr>
