@@ -495,3 +495,26 @@ body {
     cursor: pointer;
     line-height: 1;
 }
+
+.info-box {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    background-color: var(--bg-accent);
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    margin: 16px 0;
+    border: 1px solid var(--border-color);
+}
+
+.info-box .info-icon {
+    font-size: 16px;
+    line-height: 1.4;
+}
+
+.info-box p {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}

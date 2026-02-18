@@ -365,6 +365,11 @@ const FormPanel = ({ form, updateField, grp, lancerSim }) => {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const set = (k, v) => updateField(k, v);
   
+  const SCENARIO_DESCRIPTIONS = {
+    souscription: "Le client effectue une nouvelle souscription. Les indicateurs liés au capital, à la prime et aux conditions de souscription seront évalués.",
+    rachat: "Le client effectue un rachat sur un contrat existant. Les indicateurs liés à la valeur de rachat et aux conditions de cette opération seront évalués.",
+  };
+
   return (
     <div>
       <div className="panel-h">
@@ -386,7 +391,11 @@ const FormPanel = ({ form, updateField, grp, lancerSim }) => {
           <option value="rachat">Rachat</option>
         </Field>
       </div>
+      {form.niveauRisque === 'RE' && 
+        <InfoBox text="Le niveau de risque 'En Relation d'Affaires (Renforcé)' applique des seuils de détection plus bas, rendant la simulation plus sensible aux risques potentiels." />
+      }
       <div className="sec">Scénarios & Montants</div>
+      <InfoBox text={SCENARIO_DESCRIPTIONS[form.typeOperation]} />
       <div className="seuil-box">
         <Tooltip text="Catégorie de client basée sur l'activité, influence les seuils d'alerte.">Groupe activité: <strong>{grp.toUpperCase()}</strong></Tooltip>
         &nbsp;·&nbsp; Risque: <strong>{form.niveauRisque}</strong>
@@ -618,4 +627,11 @@ const StatBox = ({ label, value, color = 'var(--text-accent)' }) => (
     <div className="st-v" style={{ color }}>{value}</div>
     <div className="st-l">{label}</div>
   </div>
+);
+
+const InfoBox = ({ text }) => (
+    <div className="info-box">
+        <span className="info-icon">ℹ️</span>
+        <p>{text}</p>
+    </div>
 );
