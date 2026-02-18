@@ -85,7 +85,7 @@ function App() {
   const [theme, setTheme] = useState("dark");
   const [selId, setSelId] = useState(null);
   const [form, setForm] = useState(null);
-  const [tab, setTab] = useState("form");
+  const [tab, setTab] = useState("alerte");
   const [globalError, setGlobalError] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null); // { id, nom }
 
@@ -124,7 +124,7 @@ function App() {
     if (!c) return;
     setSelId(c.id);
     setForm({ ...c });
-    setTab("form");
+    setTab("alerte");
   }, []);
 
   useEffect(() => {
@@ -292,16 +292,20 @@ function App() {
         {clients.length > 0 && form ? (
           <>
             <div className="tabs">
-              <Tab id="form" label="Profil client" currentTab={tab} setTab={setTab} />
-              <Tab id="resultats" label={`Résultats ${curInds ? `· ${curAlerts.length} alerte${curAlerts.length !== 1 ? "s" : ""}` : ""}`} currentTab={tab} setTab={setTab} />
               <Tab id="alerte" label="🔎 Simulation d'alerte" currentTab={tab} setTab={setTab} />
+              <Tab id="resultats" label={`Derniers résultats ${curInds ? `· ${curAlerts.length} alerte${curAlerts.length !== 1 ? "s" : ""}` : ""}`} currentTab={tab} setTab={setTab} />
               <Tab id="global" label="Vue globale" currentTab={tab} setTab={setTab} />
               <Tab id="history" label={`Historique (${history.length})`} currentTab={tab} setTab={setTab} />
             </div>
             <div className="cnt">
-              {tab === "form" && <FormPanel form={form} updateField={updateFormField} grp={grp} lancerSim={lancerSim} />}
+              {tab === "alerte" && <AlertSimPanel
+                activeClient={form}
+                selId={selId}
+                updateField={updateFormField}
+                addClient={addClient}
+                lancerHistorique={lancerSim}
+              />}
               {tab === "resultats" && <ResultPanel results={curInds} client={form} />}
-              {tab === "alerte" && <AlertSimPanel />}
               {tab === "global" && <GlobalPanel clients={clients} results={simResults} runAll={runAll} selectClient={selectClient} setTab={setTab} />}
               {tab === "history" && <HistoryPanel history={history} />}
             </div>
@@ -382,73 +386,7 @@ const WelcomePanel = ({ addClient }) => (
   </div>
 );
 
-const FormPanel = ({ form, updateField, grp, lancerSim }) => {
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const set = (k, v) => updateField(k, v);
 
-  const SCENARIO_DESCRIPTIONS = {
-    souscription: "Le client effectue une nouvelle souscription. Les indicateurs liés au capital, à la prime et aux conditions de souscription seront évalués.",
-    rachat: "Le client effectue un rachat sur un contrat existant. Les indicateurs liés à la valeur de rachat et aux conditions de cette opération seront évalués.",
-  };
-
-  return (
-    <div>
-      <div className="panel-h">
-        <div className="panel-t">Dossier Client</div>
-        <button className="run" onClick={lancerSim}>▶ Lancer la simulation</button>
-      </div>
-      <div className="sec">Informations générales</div>
-      <div className="fg2">
-        <Field label="Nom complet" placeholder="Prénom Nom" value={form.nom} onChange={e => set("nom", e.target.value)} />
-        <Field label="Activité professionnelle" as="select" value={form.activite} onChange={e => set("activite", e.target.value)}>
-          {["élève", "étudiant", "sans profession", "travailleur indépendant", "salarié", "fonctionnaire", "chef d'entreprise", "profession libérale", "PM"].map(a => <option key={a}>{a}</option>)}
-        </Field>
-        <Field label="Niveau de risque LCB-FT" as="select" value={form.niveauRisque} onChange={e => set("niveauRisque", e.target.value)}>
-          <option value="!=">Hors Relation d'Affaires (Standard)</option>
-          <option value="RE">En Relation d'Affaires (Renforcé)</option>
-        </Field>
-        <Field label="Type d'opération simulée" as="select" value={form.typeOperation} onChange={e => set("typeOperation", e.target.value)}>
-          <option value="souscription">Souscription</option>
-          <option value="rachat">Rachat</option>
-        </Field>
-      </div>
-      {form.niveauRisque === 'RE' &&
-        <InfoBox text="Le niveau de risque 'En Relation d'Affaires (Renforcé)' applique des seuils de détection plus bas, rendant la simulation plus sensible aux risques potentiels." />
-      }
-      <div className="sec">Scénarios & Montants</div>
-      <InfoBox text={SCENARIO_DESCRIPTIONS[form.typeOperation]} />
-      <div className="seuil-box">
-        <Tooltip text="Catégorie de client basée sur l'activité, influence les seuils d'alerte.">Groupe activité: <strong>{grp.toUpperCase()}</strong></Tooltip>
-        &nbsp;·&nbsp; Risque: <strong>{form.niveauRisque}</strong>
-        &nbsp;&nbsp;|&nbsp;&nbsp;
-        <Tooltip text="Seuil pour l'indicateur Capital">Capital: <strong>{SEUILS.ind2[grp]?.[form.niveauRisque]?.toLocaleString("fr-TN")} DT</strong></Tooltip>
-        &nbsp;·&nbsp;
-        <Tooltip text="Seuil pour l'indicateur Prime">Prime: <strong>{SEUILS.ind3[grp]?.[form.niveauRisque]?.toLocaleString("fr-TN")} DT</strong></Tooltip>
-        &nbsp;·&nbsp;
-        <Tooltip text="Seuil pour l'indicateur Rachat">Rachat: <strong>{SEUILS.ind4[grp]?.[form.niveauRisque]?.toLocaleString("fr-TN")} DT</strong></Tooltip>
-      </div>
-      <div className="fg3">
-        <Field label="Capital assuré (DT)" type="number" value={form.capitalAssure} onChange={e => set("capitalAssure", +e.target.value)} />
-        <Field label="Prime versée (DT)" type="number" value={form.prime} onChange={e => set("prime", +e.target.value)} />
-        <Field label="Valeur de rachat (DT)" type="number" value={form.valeurRachat} onChange={e => set("valeurRachat", +e.target.value)} />
-      </div>
-      <div className="sec-toggle" onClick={() => setShowAdvanced(!showAdvanced)}>
-        <span>{showAdvanced ? '▼' : '▶'} Indicateurs avancés & spécifiques</span>
-      </div>
-      {showAdvanced && (
-        <div className="advanced-grid">
-          <Toggle k="paysGafi" l="Pays liste GAFI" v={form.paysGafi} set={set} />
-          <Toggle k="rachatMoins90j" l="Rachat < 90 jours" v={form.rachatMoins90j} set={set} />
-          <Toggle k="changementBeneficiaire" l="Changement fréquent bénéficiaire (≥3)" v={form.changementBeneficiaire} set={set} />
-          <Toggle k="baytIIcoherent" l="Capital Bayti incohérent" v={form.baytIIcoherent} set={set} />
-          <Toggle k="souscriptionsMultiples" l="Souscriptions multiples (≥3 / 3 ans)" v={form.souscriptionsMultiples} set={set} />
-          <Field label="Paiement espèces (DT)" type="number" value={form.paiementEspeces} onChange={e => set("paiementEspeces", +e.target.value)} />
-          <Field label="Ratio aug. capital (ex: 2.5)" type="number" step="0.1" value={form.augmentationCapital} onChange={e => set("augmentationCapital", +e.target.value)} />
-        </div>
-      )}
-    </div>
-  );
-}
 
 const ResultPanel = ({ results, client }) => {
   if (!results) return (
@@ -634,52 +572,95 @@ const GRAVITE_CONFIG = {
   moyenne: { label: "MOYENNE", cls: "sim-badge-moyenne", icon: "🟡" },
 };
 
-const PROFIL_VIDE = {
-  activite: "salarié",
-  niveauRisque: "!=",
-  typeOperation: "souscription",
-  capitalAssure: 0,
-  prime: 0,
-  valeurRachat: 0,
-  augmentationCapital: 0,
-  paiementEspeces: 0,
-  paysGafi: false,
-  rachatMoins90j: false,
-  changementBeneficiaire: false,
-  baytIIcoherent: false,
-  souscriptionsMultiples: false,
-};
 
-const AlertSimPanel = () => {
-  const [profil, setProfil] = useState(PROFIL_VIDE);
+
+const PROFIL_VIDE = { ...CLIENT_VIDE };
+
+const AlertSimPanel = ({ activeClient, selId, updateField, addClient, lancerHistorique }) => {
+  const [localProfil, setLocalProfil] = useState(PROFIL_VIDE);
   const [resultat, setResultat] = useState(null);
   const [tested, setTested] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const set = (k, v) => setProfil(p => ({ ...p, [k]: v }));
+  // Synchronise avec le client sélectionné si présent
+  useEffect(() => {
+    if (activeClient) {
+      setLocalProfil(activeClient);
+      setResultat(null);
+      setTested(false);
+    }
+  }, [activeClient]);
+
+  const set = (k, v) => {
+    if (selId) {
+      updateField(k, v);
+    } else {
+      setLocalProfil(p => ({ ...p, [k]: v }));
+    }
+  };
 
   const testerProfil = () => {
-    const res = checkAlert(profil);
+    const res = checkAlert(selId ? activeClient : localProfil);
     setResultat(res);
     setTested(true);
   };
 
-  const reset = () => { setProfil(PROFIL_VIDE); setResultat(null); setTested(false); };
+  const handleSave = async () => {
+    if (selId) return; // Déjà enregistré
+    setIsSaving(true);
+    try {
+      // Pour forcer l'enregistrement d'un nouveau client avec les données actuelles
+      // On peut modifier addClient pour accepter un profil initial
+      // Mais ici on va faire simple : addClient crée un client vide, puis on le mettra à jour.
+      // OU on crée une fonction d'enregistrement direct.
 
-  const showCapital = ["souscription", "augmentation"].includes(profil.typeOperation);
-  const showPrime = ["souscription", "prime"].includes(profil.typeOperation);
-  const showRachat = profil.typeOperation === "rachat";
-  const showAug = profil.typeOperation === "augmentation";
+      // Note: On utilise ici les données locales du simulateur
+      const clientToSave = { ...localProfil, createdAt: new Date().toISOString() };
+      if (!clientToSave.nom) clientToSave.nom = "Nouveau client";
+
+      const docRef = await addDoc(collection(db, 'clients'), clientToSave);
+      // Le composant App va re-loader via onSnapshot et selId/form seront mis à jour.
+      alert("Profil client enregistré avec succès !");
+    } catch (e) {
+      console.error("Error saving client:", e);
+      alert("Erreur lors de l'enregistrement.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const reset = () => {
+    if (selId) {
+      // On ne "reset" pas un client existant comme ça, peut-être juste vider l'écran de test?
+      setResultat(null);
+      setTested(false);
+    } else {
+      setLocalProfil(PROFIL_VIDE);
+      setResultat(null);
+      setTested(false);
+    }
+  };
+
+  const currentData = selId ? activeClient : localProfil;
+  const showCapital = ["souscription", "augmentation"].includes(currentData.typeOperation);
+  const showPrime = ["souscription", "prime"].includes(currentData.typeOperation);
+  const showRachat = currentData.typeOperation === "rachat";
+  const showAug = currentData.typeOperation === "augmentation";
 
   return (
     <div className="sim-panel">
       <div className="panel-h">
         <div>
           <div className="panel-t">🔎 Simulation d'alerte</div>
-          <div className="sim-subtitle">Testez si un profil client déclencherait une alerte AML — sans backtesting complet</div>
+          <div className="sim-subtitle">
+            {selId ? `Édition de : ${activeClient.nom}` : "Simulation libre — Saisissez un profil pour tester"}
+          </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
+          {selId && <button className="run" style={{ background: 'var(--text-success)' }} onClick={lancerHistorique}>💾 Enreg. Historique</button>}
+          {!selId && <button className="run" style={{ background: 'var(--text-accent)' }} onClick={handleSave} disabled={isSaving}>{isSaving ? "Encuur..." : "📁 Enregistrer le client"}</button>}
           <button className="sim-reset-btn" onClick={reset}>↺ Réinitialiser</button>
-          <button className="run" onClick={testerProfil}>▶ Tester le profil</button>
+          <button className="run" onClick={testerProfil}>▶ Lancer le Test</button>
         </div>
       </div>
 
@@ -688,34 +669,35 @@ const AlertSimPanel = () => {
         <div className="sim-form-col">
           <div className="sec">Profil client</div>
           <div className="sim-form-group">
-            <Field label="Activité professionnelle" as="select" value={profil.activite} onChange={e => set("activite", e.target.value)}>
+            <Field label="Nom complet" placeholder="Prénom Nom" value={currentData.nom} onChange={e => set("nom", e.target.value)} />
+            <Field label="Activité professionnelle" as="select" value={currentData.activite} onChange={e => set("activite", e.target.value)}>
               {ACTIVITES.map(a => <option key={a}>{a}</option>)}
             </Field>
-            <Field label="Niveau de risque LCB-FT" as="select" value={profil.niveauRisque} onChange={e => set("niveauRisque", e.target.value)}>
+            <Field label="Niveau de risque LCB-FT" as="select" value={currentData.niveauRisque} onChange={e => set("niveauRisque", e.target.value)}>
               <option value="!=">Hors Relation d'Affaires (Standard)</option>
               <option value="RE">En Relation d'Affaires (Renforcé)</option>
             </Field>
-            <Field label="Type d'opération" as="select" value={profil.typeOperation} onChange={e => set("typeOperation", e.target.value)}>
+            <Field label="Type d'opération" as="select" value={currentData.typeOperation} onChange={e => set("typeOperation", e.target.value)}>
               {TYPES_OPERATION.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
             </Field>
           </div>
 
           <div className="sec">Montants</div>
           <div className="sim-form-group">
-            {showCapital && <Field label="Capital assuré (DT)" type="number" min="0" value={profil.capitalAssure} onChange={e => set("capitalAssure", +e.target.value)} />}
-            {showPrime && <Field label="Prime versée (DT)" type="number" min="0" value={profil.prime} onChange={e => set("prime", +e.target.value)} />}
-            {showRachat && <Field label="Valeur de rachat (DT)" type="number" min="0" value={profil.valeurRachat} onChange={e => set("valeurRachat", +e.target.value)} />}
-            {showAug && <Field label="Ratio augmentation capital (ex: 2.5)" type="number" step="0.1" min="0" value={profil.augmentationCapital} onChange={e => set("augmentationCapital", +e.target.value)} />}
-            <Field label="Paiement en espèces (DT)" type="number" min="0" value={profil.paiementEspeces} onChange={e => set("paiementEspeces", +e.target.value)} />
+            {showCapital && <Field label="Capital assuré (DT)" type="number" min="0" value={currentData.capitalAssure} onChange={e => set("capitalAssure", +e.target.value)} />}
+            {showPrime && <Field label="Prime versée (DT)" type="number" min="0" value={currentData.prime} onChange={e => set("prime", +e.target.value)} />}
+            {showRachat && <Field label="Valeur de rachat (DT)" type="number" min="0" value={currentData.valeurRachat} onChange={e => set("valeurRachat", +e.target.value)} />}
+            {showAug && <Field label="Ratio augmentation capital (ex: 2.5)" type="number" step="0.1" min="0" value={currentData.augmentationCapital} onChange={e => set("augmentationCapital", +e.target.value)} />}
+            <Field label="Paiement en espèces (DT)" type="number" min="0" value={currentData.paiementEspeces} onChange={e => set("paiementEspeces", +e.target.value)} />
           </div>
 
           <div className="sec">Indicateurs spécifiques</div>
           <div className="sim-toggles">
-            <Toggle k="paysGafi" l="Client pays liste GAFI" v={profil.paysGafi} set={set} />
-            <Toggle k="rachatMoins90j" l="Rachat < 90 jours après souscription" v={profil.rachatMoins90j} set={set} />
-            <Toggle k="changementBeneficiaire" l="≥ 3 changements de bénéficiaire" v={profil.changementBeneficiaire} set={set} />
-            <Toggle k="baytIIcoherent" l="Capital Bayti incohérent avec profil" v={profil.baytIIcoherent} set={set} />
-            <Toggle k="souscriptionsMultiples" l="≥ 3 souscriptions sur < 3 ans" v={profil.souscriptionsMultiples} set={set} />
+            <Toggle k="paysGafi" l="Client pays liste GAFI" v={currentData.paysGafi} set={set} />
+            <Toggle k="rachatMoins90j" l="Rachat < 90 jours après souscription" v={currentData.rachatMoins90j} set={set} />
+            <Toggle k="changementBeneficiaire" l="≥ 3 changements de bénéficiaire" v={currentData.changementBeneficiaire} set={set} />
+            <Toggle k="baytIIcoherent" l="Capital Bayti incohérent avec profil" v={currentData.baytIIcoherent} set={set} />
+            <Toggle k="souscriptionsMultiples" l="≥ 3 souscriptions sur < 3 ans" v={currentData.souscriptionsMultiples} set={set} />
           </div>
         </div>
 
@@ -723,9 +705,13 @@ const AlertSimPanel = () => {
         <div className="sim-result-col">
           {!tested ? (
             <div className="sim-placeholder">
-              <div className="sim-placeholder-icon">🛡️</div>
-              <div className="sim-placeholder-title">Aucune simulation lancée</div>
-              <div className="sim-placeholder-sub">Remplissez le formulaire et cliquez sur<br />"Tester le profil" pour voir les résultats.</div>
+              <div className="sim-placeholder-icon">{selId ? "🖊️" : "🛡️"}</div>
+              <div className="sim-placeholder-title">{selId ? "Client sélectionné" : "Aucune simulation lancée"}</div>
+              <div className="sim-placeholder-sub">
+                {selId
+                  ? "Les modifications sont enregistrées en temps réel. Cliquez sur 'Lancer le Test' pour évaluer ce profil."
+                  : "Saisissez les données et cliquez sur 'Lancer le Test' pour voir si une alerte se génère."}
+              </div>
             </div>
           ) : (
             <>
@@ -742,7 +728,7 @@ const AlertSimPanel = () => {
                       : "Aucun scénario d'alerte déclenché pour ce profil"}
                   </div>
                   <div className="sim-verdict-meta">
-                    {profil.activite} · {profil.niveauRisque === "RE" ? "En RE" : "Hors RE"} · Groupe: {resultat.groupe}
+                    {currentData.activite} · {currentData.niveauRisque === "RE" ? "En RE" : "Hors RE"} · Groupe: {resultat.groupe}
                   </div>
                 </div>
               </div>
@@ -770,7 +756,7 @@ const AlertSimPanel = () => {
               {/* Résumé seuils applicables */}
               <div className="sim-seuils-box">
                 <div className="sim-seuils-title">📊 Seuils applicables à ce profil</div>
-                <SeuilsTable profil={profil} groupe={resultat.groupe} />
+                <SeuilsTable profil={currentData} groupe={resultat.groupe} />
               </div>
             </>
           )}
