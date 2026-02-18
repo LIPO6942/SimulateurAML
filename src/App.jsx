@@ -87,6 +87,7 @@ function App() {
   const [form, setForm] = useState(null);
   const [tab, setTab] = useState("form");
   const [globalError, setGlobalError] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null); // { id, nom }
 
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -155,15 +156,21 @@ function App() {
 
   const deleteClient = async (e, idToDelete) => {
     e.stopPropagation();
+    const client = clients.find(c => c.id === idToDelete);
+    setConfirmDelete({ id: idToDelete, nom: client?.nom || idToDelete });
+  };
+
+  const doDeleteClient = async () => {
+    if (!confirmDelete) return;
+    const idToDelete = confirmDelete.id;
+    setConfirmDelete(null);
     setGlobalError(null);
-    if (window.confirm("Êtes-vous sûr de vouloir supprimer ce client ?")) {
-      try {
-        await deleteDoc(doc(db, 'clients', idToDelete));
-        await deleteDoc(doc(db, 'simResults', idToDelete));
-      } catch (e) {
-        console.error("Error deleting client: ", e);
-        setGlobalError(`Erreur de suppression: ${e.message}`);
-      }
+    try {
+      await deleteDoc(doc(db, 'clients', idToDelete));
+      await deleteDoc(doc(db, 'simResults', idToDelete));
+    } catch (e) {
+      console.error("Error deleting client: ", e);
+      setGlobalError(`Erreur de suppression: ${e.message}`);
     }
   };
 
@@ -270,6 +277,18 @@ function App() {
       />
       <main className="main">
         <ErrorDisplay message={globalError} onClose={() => setGlobalError(null)} />
+        {confirmDelete && (
+          <div className="confirm-overlay">
+            <div className="confirm-box">
+              <div className="confirm-title">Supprimer le client ?</div>
+              <div className="confirm-msg">Cette action est irréversible. Le client <strong>{confirmDelete.nom}</strong> et toutes ses simulations seront supprimés.</div>
+              <div className="confirm-actions">
+                <button className="confirm-cancel" onClick={() => setConfirmDelete(null)}>Annuler</button>
+                <button className="confirm-ok" onClick={doDeleteClient}>🗑️ Supprimer</button>
+              </div>
+            </div>
+          </div>
+        )}
         {clients.length > 0 && form ? (
           <>
             <div className="tabs">
@@ -418,17 +437,13 @@ const FormPanel = ({ form, updateField, grp, lancerSim }) => {
       </div>
       {showAdvanced && (
         <div className="advanced-grid">
-          <Toggle k="produitVie" l="Ind. 1 — Souscription produit Vie" v={form.produitVie} set={set} />
-          <Toggle k="niveauRisqueElevé" l="Ind. 1 — Client à risque élevé" v={form.niveauRisqueElevé} set={set} />
-          <Field label="Ratio aug. capital (Ind. 6)" type="number" step="0.1" value={form.augmentationCapital} onChange={e => set("augmentationCapital", +e.target.value)} />
-          <Field label="Paiement espèces (DT) (Ind. 12)" type="number" value={form.paiementEspeces} onChange={e => set("paiementEspeces", +e.target.value)} />
-          <Toggle k="paysGafi" l="Ind. 2 — Pays liste GAFI" v={form.paysGafi} set={set} />
-          <Toggle k="rachatMoins90j" l="Ind. 7 — Rachat < 90 jours" v={form.rachatMoins90j} set={set} />
-          <Toggle k="beneficiairePaysRisque" l="Ind. 8 — Bénéficiaire pays à risque" v={form.beneficiairePaysRisque} set={set} />
-          <Toggle k="changementBeneficiaire" l="Ind. 9 — Changement fréquent bénéficiaire" v={form.changementBeneficiaire} set={set} />
-          <Toggle k="baytIIcoherent" l="Ind. 10 — Capital Bayti incohérent" v={form.baytIIcoherent} set={set} />
-          <Toggle k="souscriptionsMultiples" l="Ind. 11 — Souscriptions multiples" v={form.souscriptionsMultiples} set={set} />
-          <Toggle k="plusieursComptes" l="Ind. 13 — Plusieurs comptes bancaires" v={form.plusieursComptes} set={set} />
+          <Toggle k="paysGafi" l="Pays liste GAFI" v={form.paysGafi} set={set} />
+          <Toggle k="rachatMoins90j" l="Rachat < 90 jours" v={form.rachatMoins90j} set={set} />
+          <Toggle k="changementBeneficiaire" l="Changement fréquent bénéficiaire (≥3)" v={form.changementBeneficiaire} set={set} />
+          <Toggle k="baytIIcoherent" l="Capital Bayti incohérent" v={form.baytIIcoherent} set={set} />
+          <Toggle k="souscriptionsMultiples" l="Souscriptions multiples (≥3 / 3 ans)" v={form.souscriptionsMultiples} set={set} />
+          <Field label="Paiement espèces (DT)" type="number" value={form.paiementEspeces} onChange={e => set("paiementEspeces", +e.target.value)} />
+          <Field label="Ratio aug. capital (ex: 2.5)" type="number" step="0.1" value={form.augmentationCapital} onChange={e => set("augmentationCapital", +e.target.value)} />
         </div>
       )}
     </div>
