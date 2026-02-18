@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { db } from './firebase.js';
 import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, setDoc, writeBatch } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { evaluerIndicateurs, getGroupe, SEUILS } from './engine.js';
+import { evaluerIndicateurs, getGroupe, SEUILS, checkAlert } from './engine.js';
 import { CLIENT_VIDE } from './data.js';
 import './styles.css';
 import { debounce } from 'lodash';
@@ -44,12 +44,12 @@ const LoginScreen = () => {
       console.error(error)
     }
   };
-  
+
   const handleSignUp = async () => {
     setError(null);
-    if(password.length < 6) { 
-        setError('Le mot de passe doit faire au moins 6 caractères.');
-        return;
+    if (password.length < 6) {
+      setError('Le mot de passe doit faire au moins 6 caractères.');
+      return;
     }
     try {
       await createUserWithEmailAndPassword(auth, email, password);
@@ -71,7 +71,7 @@ const LoginScreen = () => {
           {error && <p className="error-msg">{error}</p>}
           <button type="submit" className="run">Se connecter</button>
         </form>
-         <p className="signup-text">Pas encore de compte ? <button onClick={handleSignUp} className="link-btn">Créez-en un.</button></p>
+        <p className="signup-text">Pas encore de compte ? <button onClick={handleSignUp} className="link-btn">Créez-en un.</button></p>
       </div>
     </div>
   );
@@ -92,25 +92,25 @@ function App() {
     if (!auth.currentUser) return;
 
     const handleSnapshotError = (err, context) => {
-        console.error(`Erreur de lecture (${context}):`, err);
-        setGlobalError(`Impossible de charger les données (${context}). Vérifiez vos règles de sécurité Firestore et la connexion.`)
+      console.error(`Erreur de lecture (${context}):`, err);
+      setGlobalError(`Impossible de charger les données (${context}). Vérifiez vos règles de sécurité Firestore et la connexion.`)
     }
 
-    const unsubscribeClients = onSnapshot(collection(db, 'clients'), 
-        snapshot => setClients(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))),
-        err => handleSnapshotError(err, 'clients')
+    const unsubscribeClients = onSnapshot(collection(db, 'clients'),
+      snapshot => setClients(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))),
+      err => handleSnapshotError(err, 'clients')
     );
-    const unsubscribeHistory = onSnapshot(collection(db, 'history'), 
-        snapshot => setHistory(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp))),
-        err => handleSnapshotError(err, 'history')
+    const unsubscribeHistory = onSnapshot(collection(db, 'history'),
+      snapshot => setHistory(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))),
+      err => handleSnapshotError(err, 'history')
     );
-    const unsubscribeResults = onSnapshot(collection(db, 'simResults'), 
-        snapshot => {
-            const resultsData = {};
-            snapshot.docs.forEach(doc => { resultsData[doc.id] = doc.data().results; });
-            setSimResults(resultsData);
-        },
-        err => handleSnapshotError(err, 'simulations')
+    const unsubscribeResults = onSnapshot(collection(db, 'simResults'),
+      snapshot => {
+        const resultsData = {};
+        snapshot.docs.forEach(doc => { resultsData[doc.id] = doc.data().results; });
+        setSimResults(resultsData);
+      },
+      err => handleSnapshotError(err, 'simulations')
     );
 
     return () => { unsubscribeClients(); unsubscribeHistory(); unsubscribeResults(); };
@@ -131,8 +131,8 @@ function App() {
       selectClient(clients[0]);
     } else if (clients.length > 0 && selId) {
       const selectedInList = clients.find(c => c.id === selId);
-      if(selectedInList) {
-        setForm(prev => ({...prev, ...selectedInList}));
+      if (selectedInList) {
+        setForm(prev => ({ ...prev, ...selectedInList }));
       }
       else selectClient(clients[0])
     } else if (clients.length === 0) {
@@ -140,16 +140,16 @@ function App() {
       setSelId(null);
     }
   }, [clients, selId, selectClient]);
-  
+
   const addClient = async () => {
     setGlobalError(null);
     try {
-        const newClient = { ...CLIENT_VIDE, nom: `Nouveau client ${clients.length + 1}`, createdAt: new Date().toISOString() };
-        const docRef = await addDoc(collection(db, 'clients'), newClient);
-        selectClient({ id: docRef.id, ...newClient });
+      const newClient = { ...CLIENT_VIDE, nom: `Nouveau client ${clients.length + 1}`, createdAt: new Date().toISOString() };
+      const docRef = await addDoc(collection(db, 'clients'), newClient);
+      selectClient({ id: docRef.id, ...newClient });
     } catch (e) {
-        console.error("Error adding client: ", e);
-        setGlobalError(`Erreur d'ajout de client: ${e.message}`);
+      console.error("Error adding client: ", e);
+      setGlobalError(`Erreur d'ajout de client: ${e.message}`);
     }
   };
 
@@ -157,90 +157,90 @@ function App() {
     e.stopPropagation();
     setGlobalError(null);
     if (window.confirm("Êtes-vous sûr de vouloir supprimer ce client ?")) {
-        try {
-            await deleteDoc(doc(db, 'clients', idToDelete));
-            await deleteDoc(doc(db, 'simResults', idToDelete));
-        } catch (e) {
-            console.error("Error deleting client: ", e);
-            setGlobalError(`Erreur de suppression: ${e.message}`);
-        }
+      try {
+        await deleteDoc(doc(db, 'clients', idToDelete));
+        await deleteDoc(doc(db, 'simResults', idToDelete));
+      } catch (e) {
+        console.error("Error deleting client: ", e);
+        setGlobalError(`Erreur de suppression: ${e.message}`);
+      }
     }
   };
 
   const debouncedUpdate = useMemo(() =>
     debounce(async (id, field, value) => {
-        if (!id) return;
-        setGlobalError(null);
-        try {
-            const docRef = doc(db, 'clients', id);
-            await updateDoc(docRef, { [field]: value });
-        } catch (e) {
-            console.error("Error updating client: ", e);
-            setGlobalError(`Erreur de mise à jour: ${e.message}`);
-        }
+      if (!id) return;
+      setGlobalError(null);
+      try {
+        const docRef = doc(db, 'clients', id);
+        await updateDoc(docRef, { [field]: value });
+      } catch (e) {
+        console.error("Error updating client: ", e);
+        setGlobalError(`Erreur de mise à jour: ${e.message}`);
+      }
     }, 400),
-  []);
+    []);
 
   const updateFormField = (key, value) => {
-      if(!form) return;
-      setForm(prevForm => {
-        const newForm = { ...prevForm, [key]: value };
-        debouncedUpdate(newForm.id, key, value);
-        return newForm;
-      });
+    if (!form) return;
+    setForm(prevForm => {
+      const newForm = { ...prevForm, [key]: value };
+      debouncedUpdate(newForm.id, key, value);
+      return newForm;
+    });
   };
 
   const lancerSim = async () => {
     if (!form || !form.id) {
-        setGlobalError("Aucun client sélectionné pour lancer la simulation.");
-        return;
+      setGlobalError("Aucun client sélectionné pour lancer la simulation.");
+      return;
     }
     setGlobalError(null);
     try {
-        const results = evaluerIndicateurs(form);
-        const batch = writeBatch(db);
-        
-        const resultsRef = doc(db, 'simResults', form.id);
-        batch.set(resultsRef, { results });
+      const results = evaluerIndicateurs(form);
+      const batch = writeBatch(db);
 
-        const historyRef = doc(collection(db, 'history'));
-        batch.set(historyRef, {
-            clientId: form.id,
-            clientName: form.nom,
-            timestamp: new Date().toISOString(),
-            results
-        });
+      const resultsRef = doc(db, 'simResults', form.id);
+      batch.set(resultsRef, { results });
 
-        await batch.commit();
-        setTab("resultats");
+      const historyRef = doc(collection(db, 'history'));
+      batch.set(historyRef, {
+        clientId: form.id,
+        clientName: form.nom,
+        timestamp: new Date().toISOString(),
+        results
+      });
+
+      await batch.commit();
+      setTab("resultats");
     } catch (e) {
-        console.error("Error running simulation: ", e);
-        setGlobalError(`Erreur de simulation: ${e.message}`);
+      console.error("Error running simulation: ", e);
+      setGlobalError(`Erreur de simulation: ${e.message}`);
     }
   };
 
   const runAll = async () => {
     setGlobalError(null);
     try {
-        const batch = writeBatch(db);
-        clients.forEach(c => {
-            const results = evaluerIndicateurs(c);
-            const resRef = doc(db, "simResults", c.id);
-            batch.set(resRef, { results });
+      const batch = writeBatch(db);
+      clients.forEach(c => {
+        const results = evaluerIndicateurs(c);
+        const resRef = doc(db, "simResults", c.id);
+        batch.set(resRef, { results });
 
-            const histRef = doc(collection(db, "history"));
-            batch.set(histRef, { 
-                clientId: c.id, 
-                clientName: c.nom,
-                timestamp: new Date().toISOString(),
-                results
-            });
+        const histRef = doc(collection(db, "history"));
+        batch.set(histRef, {
+          clientId: c.id,
+          clientName: c.nom,
+          timestamp: new Date().toISOString(),
+          results
         });
-        await batch.commit();
-        alert(`${clients.length} clients ont été analysés avec succès !`);
+      });
+      await batch.commit();
+      alert(`${clients.length} clients ont été analysés avec succès !`);
     } catch (e) {
-        console.error("Error running all simulations: ", e);
-        setGlobalError(`Erreur d'analyse globale: ${e.message}`);
+      console.error("Error running all simulations: ", e);
+      setGlobalError(`Erreur d'analyse globale: ${e.message}`);
     }
   };
 
@@ -274,13 +274,15 @@ function App() {
           <>
             <div className="tabs">
               <Tab id="form" label="Profil client" currentTab={tab} setTab={setTab} />
-              <Tab id="resultats" label={`Résultats ${curInds ? `· ${curAlerts.length} alerte${curAlerts.length !== 1 ? "s" : ""}`:""}`} currentTab={tab} setTab={setTab} />
+              <Tab id="resultats" label={`Résultats ${curInds ? `· ${curAlerts.length} alerte${curAlerts.length !== 1 ? "s" : ""}` : ""}`} currentTab={tab} setTab={setTab} />
+              <Tab id="alerte" label="🔎 Simulation d'alerte" currentTab={tab} setTab={setTab} />
               <Tab id="global" label="Vue globale" currentTab={tab} setTab={setTab} />
               <Tab id="history" label={`Historique (${history.length})`} currentTab={tab} setTab={setTab} />
             </div>
             <div className="cnt">
               {tab === "form" && <FormPanel form={form} updateField={updateFormField} grp={grp} lancerSim={lancerSim} />}
               {tab === "resultats" && <ResultPanel results={curInds} client={form} />}
+              {tab === "alerte" && <AlertSimPanel />}
               {tab === "global" && <GlobalPanel clients={clients} results={simResults} runAll={runAll} selectClient={selectClient} setTab={setTab} />}
               {tab === "history" && <HistoryPanel history={history} />}
             </div>
@@ -296,33 +298,33 @@ function App() {
 export default AuthGate;
 
 const ErrorDisplay = ({ message, onClose }) => {
-    if (!message) return null;
-    return (
-        <div className="error-banner">
-            <span>{message}</span>
-            <button onClick={onClose} className="close-btn">&times;</button>
-        </div>
-    );
+  if (!message) return null;
+  return (
+    <div className="error-banner">
+      <span>{message}</span>
+      <button onClick={onClose} className="close-btn">&times;</button>
+    </div>
+  );
 };
 
 const Header = ({ theme, toggleTheme }) => {
   const user = auth.currentUser;
   return (
     <header className="hdr">
-        <div className="hdr-ico">S</div>
-        <div>
+      <div className="hdr-ico">S</div>
+      <div>
         <div className="hdr-t">Simulateur Indicateurs AML</div>
         <div className="hdr-s">Monitoring LCB-FT</div>
+      </div>
+      <div className="hdr-r">
+        <div className='user-info'>
+          {user.email}
         </div>
-        <div className="hdr-r">
-            <div className='user-info'>
-                {user.email}
-            </div>
-            <button onClick={() => signOut(auth)} className='logout-btn'>Déconnexion</button>
-            <button className="theme-toggle" onClick={toggleTheme} title="Changer de thème">
-                {theme === 'light' ? '🌙' : '☀️'}
-            </button>
-        </div>
+        <button onClick={() => signOut(auth)} className='logout-btn'>Déconnexion</button>
+        <button className="theme-toggle" onClick={toggleTheme} title="Changer de thème">
+          {theme === 'light' ? '🌙' : '☀️'}
+        </button>
+      </div>
     </header>
   );
 };
@@ -364,7 +366,7 @@ const WelcomePanel = ({ addClient }) => (
 const FormPanel = ({ form, updateField, grp, lancerSim }) => {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const set = (k, v) => updateField(k, v);
-  
+
   const SCENARIO_DESCRIPTIONS = {
     souscription: "Le client effectue une nouvelle souscription. Les indicateurs liés au capital, à la prime et aux conditions de souscription seront évalués.",
     rachat: "Le client effectue un rachat sur un contrat existant. Les indicateurs liés à la valeur de rachat et aux conditions de cette opération seront évalués.",
@@ -380,7 +382,7 @@ const FormPanel = ({ form, updateField, grp, lancerSim }) => {
       <div className="fg2">
         <Field label="Nom complet" placeholder="Prénom Nom" value={form.nom} onChange={e => set("nom", e.target.value)} />
         <Field label="Activité professionnelle" as="select" value={form.activite} onChange={e => set("activite", e.target.value)}>
-          {["élève","étudiant","sans profession","travailleur indépendant","salarié","fonctionnaire","chef d'entreprise","profession libérale","PM"].map(a => <option key={a}>{a}</option>)}
+          {["élève", "étudiant", "sans profession", "travailleur indépendant", "salarié", "fonctionnaire", "chef d'entreprise", "profession libérale", "PM"].map(a => <option key={a}>{a}</option>)}
         </Field>
         <Field label="Niveau de risque LCB-FT" as="select" value={form.niveauRisque} onChange={e => set("niveauRisque", e.target.value)}>
           <option value="!=">Hors Relation d'Affaires (Standard)</option>
@@ -391,7 +393,7 @@ const FormPanel = ({ form, updateField, grp, lancerSim }) => {
           <option value="rachat">Rachat</option>
         </Field>
       </div>
-      {form.niveauRisque === 'RE' && 
+      {form.niveauRisque === 'RE' &&
         <InfoBox text="Le niveau de risque 'En Relation d'Affaires (Renforcé)' applique des seuils de détection plus bas, rendant la simulation plus sensible aux risques potentiels." />
       }
       <div className="sec">Scénarios & Montants</div>
@@ -400,11 +402,11 @@ const FormPanel = ({ form, updateField, grp, lancerSim }) => {
         <Tooltip text="Catégorie de client basée sur l'activité, influence les seuils d'alerte.">Groupe activité: <strong>{grp.toUpperCase()}</strong></Tooltip>
         &nbsp;·&nbsp; Risque: <strong>{form.niveauRisque}</strong>
         &nbsp;&nbsp;|&nbsp;&nbsp;
-        <Tooltip text="Seuil pour l'indicateur 3">Capital: <strong>{SEUILS.ind3[grp]?.[form.niveauRisque]?.toLocaleString("fr-TN")} DT</strong></Tooltip>
+        <Tooltip text="Seuil pour l'indicateur Capital">Capital: <strong>{SEUILS.ind2[grp]?.[form.niveauRisque]?.toLocaleString("fr-TN")} DT</strong></Tooltip>
         &nbsp;·&nbsp;
-        <Tooltip text="Seuil pour l'indicateur 4">Prime: <strong>{SEUILS.ind4[grp]?.[form.niveauRisque]?.toLocaleString("fr-TN")} DT</strong></Tooltip>
+        <Tooltip text="Seuil pour l'indicateur Prime">Prime: <strong>{SEUILS.ind3[grp]?.[form.niveauRisque]?.toLocaleString("fr-TN")} DT</strong></Tooltip>
         &nbsp;·&nbsp;
-        <Tooltip text="Seuil pour l'indicateur 5">Rachat: <strong>{SEUILS.ind5[grp]?.[form.niveauRisque]?.toLocaleString("fr-TN")} DT</strong></Tooltip>
+        <Tooltip text="Seuil pour l'indicateur Rachat">Rachat: <strong>{SEUILS.ind4[grp]?.[form.niveauRisque]?.toLocaleString("fr-TN")} DT</strong></Tooltip>
       </div>
       <div className="fg3">
         <Field label="Capital assuré (DT)" type="number" value={form.capitalAssure} onChange={e => set("capitalAssure", +e.target.value)} />
@@ -442,9 +444,9 @@ const ResultPanel = ({ results, client }) => {
   );
   const alerts = results.filter(r => r.alerte);
   const getVerdict = () => {
-    if(alerts.length === 0) return { label: "Conforme", chip: "c-grn" };
-    if(alerts.some(a => a.gravite === 'critique')) return { label: "Critique", chip: "c-red" };
-    if(alerts.some(a => a.gravite === 'haute')) return { label: "Haute", chip: "c-ora" };
+    if (alerts.length === 0) return { label: "Conforme", chip: "c-grn" };
+    if (alerts.some(a => a.gravite === 'critique')) return { label: "Critique", chip: "c-red" };
+    if (alerts.some(a => a.gravite === 'haute')) return { label: "Haute", chip: "c-ora" };
     return { label: "Moyenne", chip: "c-yel" };
   }
   const verdict = getVerdict();
@@ -461,12 +463,12 @@ const ResultPanel = ({ results, client }) => {
           <div className="vd-nm">{client.nom}</div>
           <div className="vd-meta">{client.id} · {client.activite} · {client.niveauRisque}</div>
           <div className="vd-chips">
-             <span className={`chip ${verdict.chip}`}>Risque Global: {verdict.label}</span>
+            <span className={`chip ${verdict.chip}`}>Risque Global: {verdict.label}</span>
           </div>
         </div>
       </div>
       <table className="ind-table">
-        <thead><tr><th>#</th><th>Indicateur</th><th>Valeur(s)</th><th>Seuil</th><th style={{textAlign:"center"}}>Verdict</th></tr></thead>
+        <thead><tr><th>#</th><th>Indicateur</th><th>Valeur(s)</th><th>Seuil</th><th style={{ textAlign: "center" }}>Verdict</th></tr></thead>
         <tbody>
           {results.map(ind => (
             <tr key={ind.id} className={ind.alerte ? "row-alerte" : ""}>
@@ -481,8 +483,8 @@ const ResultPanel = ({ results, client }) => {
                 {ind.detail && <div className={ind.alerte ? "detail-al" : "detail-ok"}>{ind.detail}</div>}
               </td>
               <td style={{ textAlign: "center" }}>
-                {ind.alerte 
-                  ? <span className={`v-ALERTE g-${ind.gravite.slice(0,1)}`}>⚠ {ind.gravite.toUpperCase()}</span>
+                {ind.alerte
+                  ? <span className={`v-ALERTE g-${ind.gravite.slice(0, 1)}`}>⚠ {ind.gravite.toUpperCase()}</span>
                   : <span className="v-OK">✓ OK</span>
                 }
               </td>
@@ -517,7 +519,7 @@ const GlobalPanel = ({ clients, results, runAll, selectClient, setTab }) => {
         <StatBox label="Alertes totales" value={Object.values(results).reduce((s, r) => s + r.filter(x => x.alerte).length, 0)} color="var(--text-warning)" />
       </div>
       <table className="btch-table">
-        <thead><tr><th>Client</th><th>Infos</th><th style={{textAlign:"center"}}>Alertes</th><th style={{textAlign:"center"}}>Verdict Global</th></tr></thead>
+        <thead><tr><th>Client</th><th>Infos</th><th style={{ textAlign: "center" }}>Alertes</th><th style={{ textAlign: "center" }}>Verdict Global</th></tr></thead>
         <tbody>
           {clients.map(c => {
             const r = results[c.id];
@@ -530,7 +532,7 @@ const GlobalPanel = ({ clients, results, runAll, selectClient, setTab }) => {
                   <div className="cli-id">{c.id}</div>
                 </td>
                 <td><span className={`chip ${c.niveauRisque === 'RE' ? 'c-yel' : 'c-grn'}`}>{c.niveauRisque}</span></td>
-                <td style={{ textAlign:"center", fontFamily:"'IBM Plex Mono', monospace", fontSize:15, fontWeight:700, color: nb === null ? "var(--text-placeholder)" : nb === 0 ? "var(--text-success)" : "var(--text-danger)" }}>
+                <td style={{ textAlign: "center", fontFamily: "'IBM Plex Mono', monospace", fontSize: 15, fontWeight: 700, color: nb === null ? "var(--text-placeholder)" : nb === 0 ? "var(--text-success)" : "var(--text-danger)" }}>
                   {nb ?? '—'}
                 </td>
                 <td style={{ textAlign: "center" }}><span className={v.class}>{v.label}</span></td>
@@ -559,8 +561,8 @@ const HistoryPanel = ({ history }) => {
           <tr>
             <th>Date & Heure</th>
             <th>Client</th>
-            <th style={{textAlign:"center"}}># Alertes</th>
-            <th style={{textAlign:"center"}}>Verdict</th>
+            <th style={{ textAlign: "center" }}># Alertes</th>
+            <th style={{ textAlign: "center" }}>Verdict</th>
           </tr>
         </thead>
         <tbody>
@@ -576,14 +578,14 @@ const HistoryPanel = ({ history }) => {
 
             return (
               <tr key={h.id}>
-                 <td>
-                  <div className="cli-nm">{new Date(h.timestamp).toLocaleString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour:'2-digit', minute:'2-digit' })}</div>
+                <td>
+                  <div className="cli-nm">{new Date(h.timestamp).toLocaleString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
                 </td>
                 <td>
                   <div className="cli-nm">{h.clientName}</div>
                   <div className="cli-id">{h.clientId}</div>
                 </td>
-                <td style={{ textAlign:"center", fontFamily:"'IBM Plex Mono', monospace", fontSize:15, fontWeight:700, color: alerts.length === 0 ? "var(--text-success)" : "var(--text-danger)" }}>
+                <td style={{ textAlign: "center", fontFamily: "'IBM Plex Mono', monospace", fontSize: 15, fontWeight: 700, color: alerts.length === 0 ? "var(--text-success)" : "var(--text-danger)" }}>
                   {alerts.length}
                 </td>
                 <td style={{ textAlign: "center" }}><span className={v.class}>{v.label}</span></td>
@@ -595,6 +597,201 @@ const HistoryPanel = ({ history }) => {
     </div>
   )
 }
+
+// ─── ALERT SIM PANEL ──────────────────────────────────────────────────────────
+const ACTIVITES = [
+  "élève", "étudiant", "sans profession", "travailleur indépendant",
+  "salarié", "fonctionnaire", "retraité",
+  "chef d'entreprise", "profession libérale", "PM"
+];
+
+const TYPES_OPERATION = [
+  { value: "souscription", label: "Souscription" },
+  { value: "rachat", label: "Rachat" },
+  { value: "augmentation", label: "Augmentation de capital" },
+  { value: "prime", label: "Versement de prime" },
+  { value: "paiement_espece", label: "Paiement en espèce" },
+];
+
+const GRAVITE_CONFIG = {
+  critique: { label: "CRITIQUE", cls: "sim-badge-critique", icon: "🔴" },
+  haute: { label: "HAUTE", cls: "sim-badge-haute", icon: "🟠" },
+  moyenne: { label: "MOYENNE", cls: "sim-badge-moyenne", icon: "🟡" },
+};
+
+const PROFIL_VIDE = {
+  activite: "salarié",
+  niveauRisque: "!=",
+  typeOperation: "souscription",
+  capitalAssure: 0,
+  prime: 0,
+  valeurRachat: 0,
+  augmentationCapital: 0,
+  paiementEspeces: 0,
+  paysGafi: false,
+  rachatMoins90j: false,
+  changementBeneficiaire: false,
+  baytIIcoherent: false,
+  souscriptionsMultiples: false,
+};
+
+const AlertSimPanel = () => {
+  const [profil, setProfil] = useState(PROFIL_VIDE);
+  const [resultat, setResultat] = useState(null);
+  const [tested, setTested] = useState(false);
+
+  const set = (k, v) => setProfil(p => ({ ...p, [k]: v }));
+
+  const testerProfil = () => {
+    const res = checkAlert(profil);
+    setResultat(res);
+    setTested(true);
+  };
+
+  const reset = () => { setProfil(PROFIL_VIDE); setResultat(null); setTested(false); };
+
+  const showCapital = ["souscription", "augmentation"].includes(profil.typeOperation);
+  const showPrime = ["souscription", "prime"].includes(profil.typeOperation);
+  const showRachat = profil.typeOperation === "rachat";
+  const showAug = profil.typeOperation === "augmentation";
+
+  return (
+    <div className="sim-panel">
+      <div className="panel-h">
+        <div>
+          <div className="panel-t">🔎 Simulation d'alerte</div>
+          <div className="sim-subtitle">Testez si un profil client déclencherait une alerte AML — sans backtesting complet</div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="sim-reset-btn" onClick={reset}>↺ Réinitialiser</button>
+          <button className="run" onClick={testerProfil}>▶ Tester le profil</button>
+        </div>
+      </div>
+
+      <div className="sim-grid">
+        {/* ── Colonne Gauche : Formulaire ── */}
+        <div className="sim-form-col">
+          <div className="sec">Profil client</div>
+          <div className="sim-form-group">
+            <Field label="Activité professionnelle" as="select" value={profil.activite} onChange={e => set("activite", e.target.value)}>
+              {ACTIVITES.map(a => <option key={a}>{a}</option>)}
+            </Field>
+            <Field label="Niveau de risque LCB-FT" as="select" value={profil.niveauRisque} onChange={e => set("niveauRisque", e.target.value)}>
+              <option value="!=">Hors Relation d'Affaires (Standard)</option>
+              <option value="RE">En Relation d'Affaires (Renforcé)</option>
+            </Field>
+            <Field label="Type d'opération" as="select" value={profil.typeOperation} onChange={e => set("typeOperation", e.target.value)}>
+              {TYPES_OPERATION.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </Field>
+          </div>
+
+          <div className="sec">Montants</div>
+          <div className="sim-form-group">
+            {showCapital && <Field label="Capital assuré (DT)" type="number" min="0" value={profil.capitalAssure} onChange={e => set("capitalAssure", +e.target.value)} />}
+            {showPrime && <Field label="Prime versée (DT)" type="number" min="0" value={profil.prime} onChange={e => set("prime", +e.target.value)} />}
+            {showRachat && <Field label="Valeur de rachat (DT)" type="number" min="0" value={profil.valeurRachat} onChange={e => set("valeurRachat", +e.target.value)} />}
+            {showAug && <Field label="Ratio augmentation capital (ex: 2.5)" type="number" step="0.1" min="0" value={profil.augmentationCapital} onChange={e => set("augmentationCapital", +e.target.value)} />}
+            <Field label="Paiement en espèces (DT)" type="number" min="0" value={profil.paiementEspeces} onChange={e => set("paiementEspeces", +e.target.value)} />
+          </div>
+
+          <div className="sec">Indicateurs spécifiques</div>
+          <div className="sim-toggles">
+            <Toggle k="paysGafi" l="Client pays liste GAFI" v={profil.paysGafi} set={set} />
+            <Toggle k="rachatMoins90j" l="Rachat < 90 jours après souscription" v={profil.rachatMoins90j} set={set} />
+            <Toggle k="changementBeneficiaire" l="≥ 3 changements de bénéficiaire" v={profil.changementBeneficiaire} set={set} />
+            <Toggle k="baytIIcoherent" l="Capital Bayti incohérent avec profil" v={profil.baytIIcoherent} set={set} />
+            <Toggle k="souscriptionsMultiples" l="≥ 3 souscriptions sur < 3 ans" v={profil.souscriptionsMultiples} set={set} />
+          </div>
+        </div>
+
+        {/* ── Colonne Droite : Résultat ── */}
+        <div className="sim-result-col">
+          {!tested ? (
+            <div className="sim-placeholder">
+              <div className="sim-placeholder-icon">🛡️</div>
+              <div className="sim-placeholder-title">Aucune simulation lancée</div>
+              <div className="sim-placeholder-sub">Remplissez le formulaire et cliquez sur<br />"Tester le profil" pour voir les résultats.</div>
+            </div>
+          ) : (
+            <>
+              {/* Verdict principal */}
+              <div className={`sim-verdict ${resultat.alert ? "sim-verdict-alerte" : "sim-verdict-ok"}`}>
+                <div className="sim-verdict-icon">{resultat.alert ? "⚠️" : "✅"}</div>
+                <div>
+                  <div className="sim-verdict-title">
+                    Alerte : <strong>{resultat.alert ? "OUI" : "NON"}</strong>
+                  </div>
+                  <div className="sim-verdict-sub">
+                    {resultat.alert
+                      ? `${resultat.alertes.length} scénario${resultat.alertes.length > 1 ? "s" : ""} déclenché${resultat.alertes.length > 1 ? "s" : ""}`
+                      : "Aucun scénario d'alerte déclenché pour ce profil"}
+                  </div>
+                  <div className="sim-verdict-meta">
+                    {profil.activite} · {profil.niveauRisque === "RE" ? "En RE" : "Hors RE"} · Groupe: {resultat.groupe}
+                  </div>
+                </div>
+              </div>
+
+              {/* Liste des alertes */}
+              {resultat.alertes.length > 0 && (
+                <div className="sim-alertes-list">
+                  <div className="sim-alertes-header">Scénarios déclenchés</div>
+                  {resultat.alertes.map(a => {
+                    const cfg = GRAVITE_CONFIG[a.gravite] || GRAVITE_CONFIG.moyenne;
+                    return (
+                      <div key={a.id} className="sim-alerte-card">
+                        <div className="sim-alerte-top">
+                          <span className="sim-alerte-num">#{a.id}</span>
+                          <span className="sim-alerte-scenario">{a.scenario}</span>
+                          <span className={`sim-badge ${cfg.cls}`}>{cfg.icon} {cfg.label}</span>
+                        </div>
+                        <div className="sim-alerte-regle">{a.regle}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Résumé seuils applicables */}
+              <div className="sim-seuils-box">
+                <div className="sim-seuils-title">📊 Seuils applicables à ce profil</div>
+                <SeuilsTable profil={profil} groupe={resultat.groupe} />
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const SeuilsTable = ({ profil, groupe }) => {
+  const risque = profil.niveauRisque;
+  const rows = [
+    { label: "Capital souscription", val: SEUILS.ind2[groupe]?.[risque], unit: "DT" },
+    { label: "Prime souscription", val: SEUILS.ind3[groupe]?.[risque], unit: "DT" },
+    { label: "Valeur rachat", val: SEUILS.ind4[groupe]?.[risque], unit: "DT" },
+    { label: "Augmentation capital", val: SEUILS.ind6[groupe], unit: "x" },
+    { label: "Paiement espèces", val: SEUILS.ind12.seuil, unit: "DT" },
+  ];
+  return (
+    <table className="sim-seuils-table">
+      <thead><tr><th>Indicateur</th><th>Seuil d'alerte</th></tr></thead>
+      <tbody>
+        {rows.map(r => (
+          <tr key={r.label}>
+            <td>{r.label}</td>
+            <td className="sim-seuil-val">
+              {r.val != null
+                ? (r.unit === "DT" ? `> ${r.val.toLocaleString("fr-TN")} DT` : `≥ x${r.val}`)
+                : "—"}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+};
 
 const Field = ({ label, as = 'input', ...props }) => {
   const InputComponent = as;
@@ -616,8 +813,8 @@ const Toggle = ({ k, l, v, set }) => (
 const Tooltip = ({ children, text }) => {
   return (
     <span className="tooltip-container">
-        {children}
-        <span className="tooltip-text">{text}</span>
+      {children}
+      <span className="tooltip-text">{text}</span>
     </span>
   );
 };
@@ -630,8 +827,8 @@ const StatBox = ({ label, value, color = 'var(--text-accent)' }) => (
 );
 
 const InfoBox = ({ text }) => (
-    <div className="info-box">
-        <span className="info-icon">ℹ️</span>
-        <p>{text}</p>
-    </div>
+  <div className="info-box">
+    <span className="info-icon">ℹ️</span>
+    <p>{text}</p>
+  </div>
 );

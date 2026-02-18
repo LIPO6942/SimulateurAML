@@ -518,3 +518,221 @@ body {
     color: var(--text-secondary);
     line-height: 1.5;
 }
+
+/* ─── SIMULATION D'ALERTE PANEL ─────────────────────────────────────────────── */
+
+.sim-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.sim-subtitle {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+
+.sim-reset-btn {
+    background: var(--bg-ter);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    padding: 10px 16px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: background-color 0.2s;
+}
+.sim-reset-btn:hover { background: var(--bg-hover); }
+
+/* Two-column layout */
+.sim-grid {
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    gap: 24px;
+    align-items: start;
+}
+
+.sim-form-col {
+    background: var(--bg-sec);
+    border-radius: var(--radius-md);
+    padding: 20px;
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow);
+}
+
+.sim-form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-bottom: 4px;
+}
+
+.sim-toggles {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.sim-result-col {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* Placeholder state */
+.sim-placeholder {
+    background: var(--bg-sec);
+    border: 2px dashed var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 60px 20px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+.sim-placeholder-icon { font-size: 48px; }
+.sim-placeholder-title { font-size: 18px; font-weight: 600; color: var(--text-primary); }
+.sim-placeholder-sub { font-size: 14px; color: var(--text-secondary); line-height: 1.6; }
+
+/* Verdict card */
+.sim-verdict {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 20px 24px;
+    border-radius: var(--radius-md);
+    border: 2px solid;
+    box-shadow: var(--shadow);
+}
+.sim-verdict-ok {
+    background: rgba(0, 230, 118, 0.08);
+    border-color: var(--text-success);
+}
+.sim-verdict-alerte {
+    background: rgba(255, 82, 82, 0.08);
+    border-color: var(--text-danger);
+}
+.sim-verdict-icon { font-size: 36px; line-height: 1; }
+.sim-verdict-title { font-size: 18px; font-weight: 600; color: var(--text-primary); }
+.sim-verdict-title strong { color: inherit; }
+.sim-verdict-ok .sim-verdict-title strong { color: var(--text-success); }
+.sim-verdict-alerte .sim-verdict-title strong { color: var(--text-danger); }
+.sim-verdict-sub { font-size: 14px; color: var(--text-secondary); margin: 4px 0; }
+.sim-verdict-meta { font-size: 12px; color: var(--text-placeholder); font-family: 'IBM Plex Mono', monospace; }
+
+/* Alert cards list */
+.sim-alertes-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.sim-alertes-header {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+.sim-alerte-card {
+    background: var(--bg-sec);
+    border: 1px solid var(--border-color);
+    border-left: 4px solid var(--text-danger);
+    border-radius: var(--radius-sm);
+    padding: 12px 16px;
+    box-shadow: var(--shadow);
+    transition: transform 0.15s;
+}
+.sim-alerte-card:hover { transform: translateX(2px); }
+.sim-alerte-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+}
+.sim-alerte-num {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-placeholder);
+    background: var(--bg-ter);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+}
+.sim-alerte-scenario {
+    font-weight: 600;
+    font-size: 14px;
+    flex: 1;
+}
+.sim-alerte-regle {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    font-family: 'IBM Plex Mono', monospace;
+}
+
+/* Severity badges */
+.sim-badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: var(--radius-sm);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+}
+.sim-badge-critique { background: rgba(255, 82, 82, 0.2); color: var(--text-danger); }
+.sim-badge-haute    { background: rgba(255, 171, 64, 0.2); color: var(--text-warning); }
+.sim-badge-moyenne  { background: rgba(251, 192, 45, 0.2); color: #fbc02d; }
+
+/* Seuils reference table */
+.sim-seuils-box {
+    background: var(--bg-sec);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 16px;
+    box-shadow: var(--shadow);
+}
+.sim-seuils-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+}
+.sim-seuils-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.sim-seuils-table th {
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-placeholder);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border-color);
+}
+.sim-seuils-table td {
+    padding: 8px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-secondary);
+}
+.sim-seuils-table tr:last-child td { border-bottom: none; }
+.sim-seuil-val {
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 600;
+    color: var(--text-accent) !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 900px) {
+    .sim-grid {
+        grid-template-columns: 1fr;
+    }
+}
