@@ -64,9 +64,9 @@ const LoginScreen = () => {
   return (
     <div className="login-screen">
       <div className="login-box">
-        <div className="hdr-ico">M</div>
-        <h2>Connexion à RegTools</h2>
-        <p>Veuillez vous connecter pour accéder à la plateforme.</p>
+        <div className="hdr-ico">S</div>
+        <h2>Simulateur Indicateurs AML</h2>
+        <p>Veuillez vous connecter pour accéder au simulateur.</p>
         <form onSubmit={handleSignIn}>
           <Field label="Adresse e-mail" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="vous@exemple.com" />
           <Field label="Mot de passe" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" />
@@ -266,10 +266,10 @@ const Header = ({ theme, toggleTheme }) => {
   const user = auth.currentUser;
   return (
     <header className="hdr">
-        <div className="hdr-ico">M</div>
+        <div className="hdr-ico">S</div>
         <div>
-        <div className="hdr-t">RegTools — Monitoring LCB-FT</div>
-        <div className="hdr-s">Plateforme Collaborative en Temps Réel</div>
+        <div className="hdr-t">Simulateur Indicateurs AML</div>
+        <div className="hdr-s">Monitoring LCB-FT</div>
         </div>
         <div className="hdr-r">
             <div className='user-info'>
