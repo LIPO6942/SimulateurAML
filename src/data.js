@@ -1,7 +1,6 @@
 // ─── DONNÉES EXEMPLES & VALEURS PAR DÉFAUT ────────────────────────────────────
 
 export const CLIENT_VIDE = {
-  id: "",
   nom: "",
   activite: "salarié",
   niveauRisque: "!= RE",

@@ -131,7 +131,9 @@ function App() {
       selectClient(clients[0]);
     } else if (clients.length > 0 && selId) {
       const selectedInList = clients.find(c => c.id === selId);
-      if(selectedInList) setForm(prev => ({...selectedInList, ...prev, id: selectedInList.id}));
+      if(selectedInList) {
+        setForm(prev => ({...prev, ...selectedInList}));
+      }
       else selectClient(clients[0])
     } else if (clients.length === 0) {
       setForm(null);
