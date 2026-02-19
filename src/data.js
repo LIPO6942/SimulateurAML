@@ -2,23 +2,23 @@
 
 export const CLIENT_VIDE = {
   nom: "",
+  pays: "Tunisie",
   activite: "salarié",
   niveauRisque: "RM/RF",
   typeOperation: "souscription",
-  produitVie: false,
-  niveauRisqueElevé: false,
   capitalAssure: 0,
   prime: 0,
-  paysGafi: false,
   valeurRachat: 0,
   augmentationCapital: 0,
-  rachatMoins90j: false,
-  beneficiairePaysRisque: false,
+  dateSouscription: "",
+  dateOperation: "",
+  nbContrats3Ans: 0,
   changementBeneficiaire: false,
   baytIIcoherent: false,
-  souscriptionsMultiples: false,
   paiementEspeces: 0,
-  plusieursComptes: false,
+  paysGafi: false, // Legacy fallback
+  rachatMoins90j: false, // Legacy fallback
+  souscriptionsMultiples: false, // Legacy fallback
 };
 
 export const EXEMPLES_CLIENTS = [

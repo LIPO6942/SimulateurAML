@@ -302,6 +302,15 @@ function App() {
         addClient={addClient}
         deleteClient={deleteClient}
         getDot={getDot}
+        onImport={async (newClients) => {
+          const batch = writeBatch(db);
+          newClients.forEach(nc => {
+            const docRef = doc(collection(db, 'clients'));
+            batch.set(docRef, { ...nc, createdAt: new Date().toISOString() });
+          });
+          await batch.commit();
+          alert(`${newClients.length} clients importés avec succès !`);
+        }}
       />
       <main className="main">
         <ErrorDisplay message={globalError} onClose={() => setGlobalError(null)} />
@@ -380,27 +389,68 @@ const Header = ({ theme, toggleTheme }) => {
   );
 };
 
-const Sidebar = ({ clients, selId, selectClient, addClient, deleteClient, getDot }) => (
-  <aside className="sb">
-    <div className="sb-hd">
-      <div className="sb-lbl">Portefeuille ({clients.length} clients)</div>
-    </div>
-    <div className="sb-list">
-      {clients.map(c => (
-        <div key={c.id} className={`cli ${selId === c.id ? "active" : ""}`} onClick={() => selectClient(c)}>
-          <div className="cli-av">{c.nom.charAt(0).toUpperCase()}</div>
-          <div className="cli-info">
-            <div className="cli-nm">{c.nom}</div>
-            <div className="cli-id">{c.id}</div>
+const Sidebar = ({ clients, selId, selectClient, addClient, deleteClient, getDot, onImport }) => {
+  const handleFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const text = evt.target.result;
+      const lines = text.split('\n').filter(l => l.trim() !== '');
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+
+      const imported = lines.slice(1).map(line => {
+        const values = line.split(',').map(v => v.trim());
+        const obj = { ...CLIENT_VIDE };
+        headers.forEach((h, i) => {
+          if (h === 'nom') obj.nom = values[i];
+          if (h === 'pays') obj.pays = values[i];
+          if (h === 'activite') obj.activite = values[i];
+          if (h === 'risque') obj.niveauRisque = values[i];
+          if (h === 'capital') obj.capitalAssure = Number(values[i]);
+          if (h === 'prime') obj.prime = Number(values[i]);
+          if (h === 'rachat') obj.valeurRachat = Number(values[i]);
+          if (h === 'augmentation') obj.augmentationCapital = Number(values[i]);
+          if (h === 'especes') obj.paiementEspeces = Number(values[i]);
+          if (h === 'datesouscription') obj.dateSouscription = values[i];
+          if (h === 'dateoperation') obj.dateOperation = values[i];
+          if (h === 'nbcontrats') obj.nbContrats3Ans = Number(values[i]);
+        });
+        return obj;
+      });
+      onImport(imported);
+    };
+    reader.readAsText(file);
+  };
+
+  return (
+    <aside className="sb">
+      <div className="sb-hd">
+        <div className="sb-lbl">Portefeuille ({clients.length} clients)</div>
+      </div>
+      <div className="sb-list">
+        {clients.map(c => (
+          <div key={c.id} className={`cli ${selId === c.id ? "active" : ""}`} onClick={() => selectClient(c)}>
+            <div className="cli-av">{c.nom.charAt(0).toUpperCase()}</div>
+            <div className="cli-info">
+              <div className="cli-nm">{c.nom}</div>
+              <div className="cli-id">{c.id}</div>
+            </div>
+            <div className={getDot(c.id)} />
+            <button className="cli-del" onClick={(e) => deleteClient(e, c.id)} title="Supprimer client">🗑️</button>
           </div>
-          <div className={getDot(c.id)} />
-          <button className="cli-del" onClick={(e) => deleteClient(e, c.id)} title="Supprimer client">🗑️</button>
-        </div>
-      ))}
-    </div>
-    <button className="sb-add" onClick={addClient}>+ Ajouter un client</button>
-  </aside>
-);
+        ))}
+      </div>
+      <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <button className="sb-add" onClick={addClient}>+ Ajouter un client</button>
+        <label className="sb-add" style={{ background: 'var(--text-accent)', textAlign: 'center', cursor: 'pointer' }}>
+          📂 Importer CSV
+          <input type="file" accept=".csv" onChange={handleFile} style={{ display: 'none' }} />
+        </label>
+      </div>
+    </aside>
+  );
+};
 
 const Tab = ({ id, label, currentTab, setTab }) => (
   <div className={`tab ${currentTab === id ? "on" : ""}`} onClick={() => setTab(id)}>{label}</div>
@@ -694,6 +744,7 @@ const AlertSimPanel = ({ activeClient, selId, updateField, addClient, lancerHist
           <div className="sec">Profil client</div>
           <div className="sim-form-group">
             <Field label="Nom complet" placeholder="Prénom Nom" value={currentData.nom} onChange={e => set("nom", e.target.value)} />
+            <Field label="Pays de résidence" placeholder="Ex: Tunisie, France..." value={currentData.pays} onChange={e => set("pays", e.target.value)} />
             <Field label="Activité professionnelle" as="select" value={currentData.activite} onChange={e => set("activite", e.target.value)}>
               {ACTIVITES.map(a => <option key={a}>{a}</option>)}
             </Field>
@@ -715,13 +766,17 @@ const AlertSimPanel = ({ activeClient, selId, updateField, addClient, lancerHist
             <Field label="Paiement en espèces (DT)" type="number" min="0" value={currentData.paiementEspeces} onChange={e => set("paiementEspeces", +e.target.value)} />
           </div>
 
+          <div className="sec">Détails temporels / Multiplicité</div>
+          <div className="sim-form-group">
+            <Field label="Date de souscription" type="date" value={currentData.dateSouscription} onChange={e => set("dateSouscription", e.target.value)} />
+            <Field label="Date de l'opération" type="date" value={currentData.dateOperation} onChange={e => set("dateOperation", e.target.value)} />
+            <Field label="Nb de contrats actifs (< 3 ans)" type="number" min="0" value={currentData.nbContrats3Ans} onChange={e => set("nbContrats3Ans", +e.target.value)} />
+          </div>
+
           <div className="sec">Indicateurs spécifiques</div>
           <div className="sim-toggles">
-            <Toggle k="paysGafi" l="Client pays liste GAFI (Scenario 1)" v={currentData.paysGafi} set={set} />
-            <Toggle k="rachatMoins90j" l="Rachat < 90 jours (Scenario 6)" v={currentData.rachatMoins90j} set={set} />
-            <Toggle k="changementBeneficiaire" l="≥ 3 modif. bénéficiaire (Scenario 7)" v={currentData.changementBeneficiaire} set={set} />
             <Toggle k="baytIIcoherent" l="Bayti incohérent avec profil (Scenario 8)" v={currentData.baytIIcoherent} set={set} />
-            <Toggle k="souscriptionsMultiples" l="≥ 3 contrats sur 3 ans (Scenario 9)" v={currentData.souscriptionsMultiples} set={set} />
+            <Toggle k="changementBeneficiaire" l="≥ 3 modif. bénéficiaire (Scenario 7)" v={currentData.changementBeneficiaire} set={set} />
           </div>
         </div>
 

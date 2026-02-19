@@ -7,6 +7,15 @@ const GROUPE = {
   retraite: ["retraité", "retraite"],
 };
 
+const PAYS_RISQUE_ELEVE = [
+  "Myanmar", "Cameroun", "République démocratique du Congo", "Croatie", "Haïti", "Iran",
+  "Kenya", "Corée du Nord", "Monaco", "Namibie", "Viêt Nam", "Sud-Soudan", "Syrie",
+  "Venezuela", "Yémen", "Liban", "Laos", "Algérie", "Bolivie", "Angola", "Népal",
+  "Côte d'Ivoire", "Afghanistan", "Iles Vierges américaines", "Soudan", "Israël",
+  "Russie", "Pakistan", "Niger", "Nigeria", "Mozambique", "Mali", "Koweït",
+  "Papouasie-Nouvelle-Guinée"
+];
+
 export function getGroupe(activite) {
   const a = activite.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   if (GROUPE.retraite.some(x => a.includes(x.normalize("NFD").replace(/[\u0300-\u036f]/g, "")))) return "retraite";
@@ -73,10 +82,11 @@ export function checkAlert(profile) {
     gravite
   });
 
-  // 1. Pays GAFI
-  indicators.push(genResult(1, "Pays Liste GAFI", !!profile.paysGafi,
-    "Souscription d'un contrat par un client ressortissant d'un pays sur la liste du GAFI",
-    `Pays GAFI: ${profile.paysGafi ? "Oui" : "Non"}`, "Vrai", "critique"));
+  // 1. Pays à Risque
+  const isHighRiskCountry = PAYS_RISQUE_ELEVE.some(p => profile.pays?.toLowerCase().includes(p.toLowerCase())) || !!profile.paysGafi;
+  indicators.push(genResult(1, "Pays Liste GAFI", isHighRiskCountry,
+    "Souscription d'un contrat par un client ressortissant d'un pays à risque élevé",
+    `Pays: ${profile.pays || "Non spécifié"}`, "Vrai", "critique"));
 
   // 2. Capital Assuré Élevé
   const s2 = SEUILS.ind2[groupe]?.[risque];
@@ -107,9 +117,20 @@ export function checkAlert(profile) {
     `Ratio: x${profile.augmentationCapital || 0}`, `> ${s5}x`));
 
   // 6. Rachat Précoce
-  indicators.push(genResult(6, "Rachat total ou partiel précoce", !!profile.rachatMoins90j,
+  let isEarlyRedemption = !!profile.rachatMoins90j;
+  let diffDays = "";
+  if (profile.dateSouscription && profile.dateOperation) {
+    const d1 = new Date(profile.dateSouscription);
+    const d2 = new Date(profile.dateOperation);
+    const diff = Math.floor((d2 - d1) / (1000 * 60 * 60 * 24));
+    if (!isNaN(diff)) {
+      isEarlyRedemption = diff < 90 && diff >= 0;
+      diffDays = `${diff} jours`;
+    }
+  }
+  indicators.push(genResult(6, "Rachat total ou partiel précoce", isEarlyRedemption,
     "Rachat demandé moins de 90 jours après la souscription",
-    `Rachat < 90j: ${profile.rachatMoins90j ? "Oui" : "Non"}`, "< 90 jours", "critique"));
+    `Délai: ${diffDays || (profile.rachatMoins90j ? "< 90j" : "N/A")}`, "< 90 jours", "critique"));
 
   // 7. Changement Bénéficiaire
   indicators.push(genResult(7, "Changement fréquent du bénéficiaire", !!profile.changementBeneficiaire,
@@ -124,9 +145,10 @@ export function checkAlert(profile) {
     `Incohérence: ${profile.baytIIcoherent ? "Oui" : "Non"}`, "Vrai"));
 
   // 9. Souscriptions Multiples
-  indicators.push(genResult(9, "Souscriptions multiples court délai", !!profile.souscriptionsMultiples,
+  const isMultiple = (profile.nbContrats3Ans >= 3) || !!profile.souscriptionsMultiples;
+  indicators.push(genResult(9, "Souscriptions multiples court délai", isMultiple,
     "≥ 3 contrats de vie ou capitalisation en vigueur sur une durée < 3 ans",
-    `Multiples: ${profile.souscriptionsMultiples ? "Oui" : "Non"}`, "≥ 3 contrats / 3 ans", "moyenne"));
+    `Nombre de contrats: ${profile.nbContrats3Ans || (profile.souscriptionsMultiples ? "≥ 3" : "0")}`, "≥ 3 contrats / 3 ans", "moyenne"));
 
   // 10. Paiement Espèces
   const s10 = SEUILS.ind10.seuil;
