@@ -7,6 +7,7 @@ import { CLIENT_VIDE } from './data.js';
 import './styles.css';
 import { debounce } from 'lodash';
 import * as XLSX from 'xlsx';
+import { generateAMLReport } from './groqService.js';
 
 
 const auth = getAuth();
@@ -335,6 +336,7 @@ function App() {
               <Tab id="global" label="Vue globale" currentTab={tab} setTab={setTab} />
               <Tab id="history" label={`Historique (${history.length})`} currentTab={tab} setTab={setTab} />
               {bulkData.length > 0 && <Tab id="batch" label={`📊 Analyse de masse (${bulkData.length})`} currentTab={tab} setTab={setTab} />}
+              {curInds && <Tab id="smart" label="🤖 Smart-AML" currentTab={tab} setTab={setTab} />}
             </div>
             <div className="cnt">
               {tab === "alerte" && <AlertSimPanel
@@ -348,6 +350,7 @@ function App() {
               {tab === "global" && <GlobalPanel clients={clients} results={simResults} runAll={runAll} selectClient={selectClient} setTab={setTab} />}
               {tab === "history" && <HistoryPanel history={history} />}
               {tab === "batch" && <BulkAnalysisView data={bulkData} onClear={() => { setBulkData([]); setTab("alerte"); }} />}
+              {tab === "smart" && <SmartAMLPanel client={form} results={curInds} />}
             </div>
           </>
         ) : (
@@ -987,6 +990,182 @@ const BulkAnalysisView = ({ data, onClear }) => {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+};
+
+const SmartAMLPanel = ({ client, results }) => {
+  const [report, setReport] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [copied, setCopied] = useState(false);
+
+  const alertResults = useMemo(() => {
+    if (!client) return null;
+    return checkAlert(client);
+  }, [client]);
+
+  const handleGenerate = async () => {
+    if (!client || !alertResults) return;
+    setLoading(true);
+    setError(null);
+    setReport(null);
+    try {
+      const result = await generateAMLReport(client, alertResults);
+      setReport(result);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copyToClipboard = async () => {
+    if (!report?.analyse_detaillee_goaml) return;
+    try {
+      await navigator.clipboard.writeText(report.analyse_detaillee_goaml);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback
+      const ta = document.createElement('textarea');
+      ta.value = report.analyse_detaillee_goaml;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const riskColors = {
+    CRITIQUE: '#dc2626', ELEVE: '#ef4444', MOYEN: '#f59e0b', FAIBLE: '#22c55e'
+  };
+  const decisionLabels = {
+    OUI_A_LA_CTAF: '🚨 Déclaration à la CTAF',
+    OUI_A_LA_CNLCT: '⚠️ Déclaration à la CNLCT',
+    INVESTIGATION_REQUISE: '🔍 Investigation requise',
+    NON: '✅ Pas de déclaration nécessaire'
+  };
+
+  const alertCount = alertResults?.alertes?.length || 0;
+  const suspicionScore = Math.min(100, Math.round((alertCount / 10) * 100));
+
+  return (
+    <div className="smart-aml-panel anim-up">
+      {/* Header */}
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div className="card-hd">
+          <div>
+            <h2 className="card-tit">🤖 Smart-AML Decision Support</h2>
+            <div className="card-desc">
+              Analyse IA du profil de <strong>{client?.prenom ? `${client.prenom} ${client.nom}` : client?.nom}</strong> — {alertCount} alerte{alertCount !== 1 ? 's' : ''} détectée{alertCount !== 1 ? 's' : ''}
+            </div>
+          </div>
+        </div>
+
+        {/* Suspicion Score */}
+        <div className="smart-score-section">
+          <div className="smart-score-label">Score de Suspicion</div>
+          <div className="smart-score-bar">
+            <div
+              className="smart-score-fill"
+              style={{
+                width: `${suspicionScore}%`,
+                background: suspicionScore >= 70 ? '#dc2626' : suspicionScore >= 40 ? '#f59e0b' : '#22c55e'
+              }}
+            />
+          </div>
+          <div className="smart-score-value">{suspicionScore}%</div>
+        </div>
+
+        <button
+          className="run smart-generate-btn"
+          onClick={handleGenerate}
+          disabled={loading}
+          style={{ marginTop: 16 }}
+        >
+          {loading ? '⏳ Analyse en cours...' : '🧠 Générer le motif goAML'}
+        </button>
+
+        {loading && (
+          <div className="smart-loading">
+            <div className="smart-loading-bar">
+              <div className="smart-loading-fill" />
+            </div>
+            <div className="smart-loading-text">L'IA analyse le profil client et rédige le rapport de conformité...</div>
+          </div>
+        )}
+
+        {error && (
+          <div className="smart-error">
+            <strong>❌ Erreur :</strong> {error}
+          </div>
+        )}
+      </div>
+
+      {/* Report */}
+      {report && (
+        <div className="smart-report anim-up">
+          {/* Verdict */}
+          <div className="smart-verdict-card">
+            <div className="smart-verdict-row">
+              <div className="smart-verdict-decision">
+                {decisionLabels[report.verdict?.decision] || report.verdict?.decision}
+              </div>
+              <span
+                className="smart-risk-badge"
+                style={{ background: riskColors[report.verdict?.niveau_risque] || '#666' }}
+              >
+                {report.verdict?.niveau_risque}
+              </span>
+            </div>
+            {report.motif_officiel_goaml && (
+              <div className="smart-motif">
+                <strong>Motif goAML :</strong> {report.motif_officiel_goaml}
+              </div>
+            )}
+          </div>
+
+          {/* Analyse détaillée */}
+          <div className="card" style={{ marginTop: 16 }}>
+            <div className="card-hd" style={{ justifyContent: 'space-between' }}>
+              <h3 className="card-tit">📝 Analyse détaillée goAML</h3>
+              <button className="run smart-copy-btn" onClick={copyToClipboard}>
+                {copied ? '✅ Copié !' : '📋 Copier pour goAML'}
+              </button>
+            </div>
+            <div className="smart-analyse-text">
+              {report.analyse_detaillee_goaml}
+            </div>
+          </div>
+
+          {/* Références */}
+          {report.references_reglementaires?.length > 0 && (
+            <div className="card" style={{ marginTop: 16 }}>
+              <h3 className="card-tit">📚 Références réglementaires</h3>
+              <ul className="smart-ref-list">
+                {report.references_reglementaires.map((ref, i) => (
+                  <li key={i}>{ref}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Actions */}
+          {report.actions_immediates?.length > 0 && (
+            <div className="card" style={{ marginTop: 16 }}>
+              <h3 className="card-tit">⚡ Actions immédiates</h3>
+              <ul className="smart-action-list">
+                {report.actions_immediates.map((act, i) => (
+                  <li key={i}>{act}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
