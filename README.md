@@ -1,4 +1,4 @@
-# RegTools — Monitoring LCB-FT
+# RegTools — Monitoring LCB-FT (Excel & CSV)
 
 Application de simulation et backtesting des 10 scénarios de monitoring réglementaire (LCB-FT) pour le secteur assurance.
 

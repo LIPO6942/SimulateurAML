@@ -6,6 +6,7 @@ import { getGroupe, SEUILS, checkAlert } from './engine.js';
 import { CLIENT_VIDE } from './data.js';
 import './styles.css';
 import { debounce } from 'lodash';
+import * as XLSX from 'xlsx';
 
 
 const auth = getAuth();
@@ -395,32 +396,35 @@ const Sidebar = ({ clients, selId, selectClient, addClient, deleteClient, getDot
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (evt) => {
-      const text = evt.target.result;
-      const lines = text.split('\n').filter(l => l.trim() !== '');
-      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      const bstr = evt.target.result;
+      const wb = XLSX.read(bstr, { type: 'binary' });
+      const wsname = wb.SheetNames[0];
+      const ws = wb.Sheets[wsname];
+      const data = XLSX.utils.sheet_to_json(ws);
 
-      const imported = lines.slice(1).map(line => {
-        const values = line.split(',').map(v => v.trim());
+      const imported = data.map(row => {
         const obj = { ...CLIENT_VIDE };
-        headers.forEach((h, i) => {
-          if (h === 'nom') obj.nom = values[i];
-          if (h === 'pays') obj.pays = values[i];
-          if (h === 'activite') obj.activite = values[i];
-          if (h === 'risque') obj.niveauRisque = values[i];
-          if (h === 'capital') obj.capitalAssure = Number(values[i]);
-          if (h === 'prime') obj.prime = Number(values[i]);
-          if (h === 'rachat') obj.valeurRachat = Number(values[i]);
-          if (h === 'augmentation') obj.augmentationCapital = Number(values[i]);
-          if (h === 'especes') obj.paiementEspeces = Number(values[i]);
-          if (h === 'datesouscription') obj.dateSouscription = values[i];
-          if (h === 'dateoperation') obj.dateOperation = values[i];
-          if (h === 'nbcontrats') obj.nbContrats3Ans = Number(values[i]);
+        Object.keys(row).forEach(key => {
+          const k = key.trim().toLowerCase();
+          const val = row[key];
+          if (k === 'nom') obj.nom = val;
+          if (k === 'pays') obj.pays = val;
+          if (k === 'activite') obj.activite = val;
+          if (k === 'risque') obj.niveauRisque = val;
+          if (k === 'capital') obj.capitalAssure = Number(val);
+          if (k === 'prime') obj.prime = Number(val);
+          if (k === 'rachat') obj.valeurRachat = Number(val);
+          if (k === 'augmentation') obj.augmentationCapital = Number(val);
+          if (k === 'especes') obj.paiementEspeces = Number(val);
+          if (k === 'datesouscription') obj.dateSouscription = val;
+          if (k === 'dateoperation') obj.dateOperation = val;
+          if (k === 'nbcontrats') obj.nbContrats3Ans = Number(val);
         });
         return obj;
       });
       onImport(imported);
     };
-    reader.readAsText(file);
+    reader.readAsBinaryString(file);
   };
 
   return (
@@ -444,8 +448,8 @@ const Sidebar = ({ clients, selId, selectClient, addClient, deleteClient, getDot
       <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
         <button className="sb-add" onClick={addClient}>+ Ajouter un client</button>
         <label className="sb-add" style={{ background: 'var(--text-accent)', textAlign: 'center', cursor: 'pointer' }}>
-          📂 Importer CSV
-          <input type="file" accept=".csv" onChange={handleFile} style={{ display: 'none' }} />
+          📂 Importer Excel / CSV
+          <input type="file" accept=".csv, .xlsx, .xls" onChange={handleFile} style={{ display: 'none' }} />
         </label>
       </div>
     </aside>
