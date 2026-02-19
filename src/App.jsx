@@ -87,6 +87,7 @@ function App() {
   const [selId, setSelId] = useState(null);
   const [form, setForm] = useState(null);
   const [tab, setTab] = useState("alerte");
+  const [bulkData, setBulkData] = useState([]);
   const [globalError, setGlobalError] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null); // { id, nom }
 
@@ -303,14 +304,13 @@ function App() {
         addClient={addClient}
         deleteClient={deleteClient}
         getDot={getDot}
-        onImport={async (newClients) => {
-          const batch = writeBatch(db);
-          newClients.forEach(nc => {
-            const docRef = doc(collection(db, 'clients'));
-            batch.set(docRef, { ...nc, createdAt: new Date().toISOString() });
-          });
-          await batch.commit();
-          alert(`${newClients.length} clients importés avec succès !`);
+        onImport={(newClients) => {
+          const withResults = newClients.map(c => ({
+            ...c,
+            analysis: checkAlert(c)
+          }));
+          setBulkData(withResults);
+          setTab("batch");
         }}
       />
       <main className="main">
@@ -334,6 +334,7 @@ function App() {
               <Tab id="resultats" label={`Derniers résultats ${curInds ? `· ${curAlerts.length} alerte${curAlerts.length !== 1 ? "s" : ""}` : ""}`} currentTab={tab} setTab={setTab} />
               <Tab id="global" label="Vue globale" currentTab={tab} setTab={setTab} />
               <Tab id="history" label={`Historique (${history.length})`} currentTab={tab} setTab={setTab} />
+              {bulkData.length > 0 && <Tab id="batch" label={`📊 Analyse de masse (${bulkData.length})`} currentTab={tab} setTab={setTab} />}
             </div>
             <div className="cnt">
               {tab === "alerte" && <AlertSimPanel
@@ -346,6 +347,7 @@ function App() {
               {tab === "resultats" && <ResultPanel results={curInds} client={form} />}
               {tab === "global" && <GlobalPanel clients={clients} results={simResults} runAll={runAll} selectClient={selectClient} setTab={setTab} />}
               {tab === "history" && <HistoryPanel history={history} />}
+              {tab === "batch" && <BulkAnalysisView data={bulkData} onClear={() => { setBulkData([]); setTab("alerte"); }} />}
             </div>
           </>
         ) : (
@@ -916,3 +918,74 @@ const InfoBox = ({ text }) => (
     <p>{text}</p>
   </div>
 );
+
+const BulkAnalysisView = ({ data, onClear }) => {
+  const alertCount = data.filter(d => d.analysis.alert).length;
+  return (
+    <div className="card anim-up">
+      <div className="card-hd">
+        <div>
+          <h2 className="card-tit">📊 Analyse de masse</h2>
+          <div className="card-desc">
+            {data.length} lignes importées — <strong style={{ color: 'var(--danger)' }}>{alertCount} alertes</strong> détectées
+          </div>
+        </div>
+        <button className="run" style={{ background: 'var(--danger)', padding: '6px 14px', fontSize: '0.85rem' }} onClick={onClear}>
+          🗑️ Effacer
+        </button>
+      </div>
+      <div className="table-cont" style={{ marginTop: '1rem', overflowX: 'auto' }}>
+        <table className="bulk-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Client</th>
+              <th>Pays</th>
+              <th>Risque</th>
+              <th>Alerte</th>
+              <th>Scénarios déclenchés</th>
+              <th>Détail</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.map((item, idx) => {
+              const res = item.analysis;
+              const hasAlert = res.alert;
+              return (
+                <tr key={idx} className={hasAlert ? 'row-alert' : ''}>
+                  <td style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{idx + 1}</td>
+                  <td style={{ fontWeight: 'bold' }}>{item.nom || '—'}</td>
+                  <td style={{ fontSize: '0.85rem' }}>{item.pays || '—'}</td>
+                  <td>
+                    <span className={`tag-risk ${(item.niveauRisque || '').replace('/', '-')}`}>
+                      {item.niveauRisque || '—'}
+                    </span>
+                  </td>
+                  <td>
+                    {hasAlert
+                      ? <span className="badge-alert">⚠️ ALERTE</span>
+                      : <span className="badge-ok">✅ RAS</span>}
+                  </td>
+                  <td>
+                    <div className="scenario-chips">
+                      {res.alertes.map(a => (
+                        <span key={a.id} className={`chip-id grav-${a.gravite}`} title={a.label}>
+                          S{a.id}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="text-small">
+                    {res.alertes.length > 0
+                      ? res.alertes.map(a => a.label).join(' · ')
+                      : 'Conforme'}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};

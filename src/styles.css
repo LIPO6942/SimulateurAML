@@ -1229,3 +1229,110 @@ body {
         grid-template-columns: 1fr;
     }
 }
+
+/* ─── BULK ANALYSIS TABLE ─────────────────────────────────────────────────── */
+.bulk-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.bulk-table th {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 2px solid var(--border-color);
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: var(--bg-accent);
+}
+
+.bulk-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-color);
+    vertical-align: middle;
+}
+
+.bulk-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.row-alert {
+    background: rgba(255, 82, 82, 0.05);
+}
+
+.badge-alert {
+    color: var(--text-danger);
+    font-weight: 700;
+    font-size: 0.8rem;
+}
+
+.badge-ok {
+    color: var(--text-success);
+    font-weight: 700;
+    font-size: 0.8rem;
+}
+
+.scenario-chips {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.chip-id {
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.03em;
+}
+
+.grav-critique {
+    background: #111;
+}
+
+.grav-haute {
+    background: var(--text-danger);
+}
+
+.grav-moyenne {
+    background: #f59e0b;
+}
+
+.grav-faible {
+    background: var(--text-success);
+}
+
+.tag-risk {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.tag-risk.RE {
+    background: rgba(255, 82, 82, 0.15);
+    color: var(--text-danger);
+}
+
+.tag-risk.RM-RF {
+    background: rgba(46, 137, 255, 0.12);
+    color: var(--text-accent);
+}
+
+.text-small {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    max-width: 320px;
+}
+
+.table-cont {
+    overflow-x: auto;
+}
+
+.fw-bold {
+    font-weight: 600;
+}
