@@ -1,6 +1,6 @@
 # RegTools — Monitoring LCB-FT
 
-Application de simulation et backtesting des 13 indicateurs de monitoring réglementaire (LCB-FT) pour le secteur assurance.
+Application de simulation et backtesting des 10 scénarios de monitoring réglementaire (LCB-FT) pour le secteur assurance.
 
 ## Démarrage rapide
 
@@ -21,39 +21,37 @@ npm run build
 src/
 ├── main.jsx      → Point d'entrée React
 ├── App.jsx       → Composant principal (UI + navigation)
-├── engine.js     → Moteur de règles LCB-FT (13 indicateurs)
+├── engine.js     → Moteur de règles LCB-FT (10 scénarios)
 ├── data.js       → Données exemples et valeurs par défaut
 └── styles.css    → Styles globaux
 ```
 
-## Les 13 indicateurs
+## Les 10 Scénarios
 
-| # | Indicateur | Type |
-|---|-----------|------|
-| 1 | Souscription produit Vie + risque élevé | Booléen |
-| 2 | Client pays liste GAFI | Booléen |
-| 3 | Capital assuré > seuil selon profil | Seuil dynamique |
-| 4 | Prime > seuil selon profil | Seuil dynamique |
-| 5 | Valeur rachat > seuil selon profil | Seuil dynamique |
-| 6 | Augmentation capitaux > ratio (×2 ou ×1.25) | Ratio |
-| 7 | Rachat < 90 jours | Booléen |
-| 8 | Bénéficiaire pays risque élevé | Booléen |
-| 9 | Changement fréquent bénéficiaire | Booléen |
-| 10 | Capital Bayti incohérent avec profil | Booléen |
-| 11 | Souscriptions multiples court délai | Booléen |
-| 12 | Paiement espèces > 3 000 DT | Seuil fixe |
-| 13 | Paiement via plusieurs comptes | Booléen |
+| # | Scénario | Gravité |
+|---|----------|---------|
+| 1 | Pays Liste GAFI | Critique |
+| 2 | Somme des capitaux assuré supérieur à | Haute |
+| 3 | Prime supérieure à | Haute |
+| 4 | Rachat d'un contrat d'assurance vie | Haute |
+| 5 | Augmentation de la valeur des capitaux assurés | Haute |
+| 6 | Rachat total ou partiel précoce (< 90j) | Critique |
+| 7 | Changement fréquent du bénéficiaire | Moyenne |
+| 8 | Capital assuré Produit Bayti incohérent | Haute |
+| 9 | Souscriptions multiples court délai | Moyenne |
+| 10 | Paiement en espèce (> 5 000 DT) | Critique |
 
-## Seuils dynamiques (ind. 3, 4, 5)
+## Seuils dynamiques (Sen. 2, 3, 4)
 
-Les seuils varient selon le **groupe d'activité** et le **niveau de risque** :
+Les seuils varient selon le **groupe d'activité** et le **niveau de risque** (RM/RF vs RE) :
 
-| Groupe | Activités | Capital != RE | Capital RE |
-|--------|-----------|--------------|------------|
+| Groupe | Activités | Risque RM/RF | Risque RE |
+|--------|-----------|--------------|-----------|
 | Faible | Élève, étudiant, sans profession, indépendant | 50 000 DT | 30 000 DT |
-| Moyen  | Salarié, fonctionnaire | 150 000 DT | 40 000 DT |
+| Moyen  | Salarié, fonctionnaire | 150 000 DT | 80 000 DT |
+| Retraité | Retraité | 200 000 DT | 160 000 DT |
 | Élevé  | PM, chef d'entreprise, profession libérale | 500 000 DT | 200 000 DT |
 
 ## Modifier les règles
 
-Toutes les règles métier sont dans `src/engine.js`. Pour ajuster un seuil, modifiez l'objet `SEUILS`. Pour ajouter un indicateur, ajoutez un bloc dans la fonction `evaluerIndicateurs()`.
+Toutes les règles métier sont dans `src/engine.js`. Pour ajuster un seuil, modifiez l'objet `SEUILS`. Pour modifier un scénario, intervenez dans la fonction `checkAlert()`.

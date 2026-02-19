@@ -18,28 +18,28 @@ export function getGroupe(activite) {
 export const SEUILS = {
   // Indicateur 2 — Souscription capital élevé
   ind2: {
-    faible: { "!=": 50000, "RE": 30000 },
-    moyen: { "!=": 150000, "RE": 80000 },
-    retraite: { "!=": 200000, "RE": 160000 },
-    eleve: { "!=": 500000, "RE": 200000 },
+    faible: { "RM/RF": 50000, "RE": 30000 },
+    moyen: { "RM/RF": 150000, "RE": 80000 },
+    retraite: { "RM/RF": 200000, "RE": 160000 },
+    eleve: { "RM/RF": 500000, "RE": 200000 },
   },
   // Indicateur 3 — Prime élevée à la souscription
   ind3: {
-    faible: { "!=": 1000, "RE": 400 },
-    moyen: { "!=": 2500, "RE": 1000 },
-    retraite: { "!=": 3000, "RE": 2000 },
-    eleve: { "!=": 6000, "RE": 3000 },
+    faible: { "RM/RF": 1000, "RE": 400 },
+    moyen: { "RM/RF": 2500, "RE": 1000 },
+    retraite: { "RM/RF": 3000, "RE": 2000 },
+    eleve: { "RM/RF": 6000, "RE": 3000 },
   },
   // Indicateur 4 — Rachat (valeur contrat)
   ind4: {
-    faible: { "!=": 20000, "RE": 10000 },
-    moyen: { "!=": 30000, "RE": 15000 },
-    retraite: { "!=": 50000, "RE": 30000 },
-    eleve: { "!=": 100000, "RE": 50000 },
+    faible: { "RM/RF": 20000, "RE": 10000 },
+    moyen: { "RM/RF": 30000, "RE": 15000 },
+    retraite: { "RM/RF": 50000, "RE": 30000 },
+    eleve: { "RM/RF": 100000, "RE": 50000 },
   },
   // Indicateur 5 — Augmentation capital (Ratio basé sur le risque)
   ind5: {
-    "!=": 2,
+    "RM/RF": 2,
     "RE": 1.25
   },
   // Indicateur 8 — Capital Bayti incohérent
@@ -60,7 +60,7 @@ export const SEUILS = {
 
 export function checkAlert(profile) {
   const groupe = getGroupe(profile.activite || "salarié");
-  const risque = profile.niveauRisque || "!=";
+  const risque = profile.niveauRisque || "RM/RF";
   const indicators = [];
 
   const genResult = (id, label, condition, regle, valeurs, seuil, gravite = "haute") => ({
@@ -82,28 +82,28 @@ export function checkAlert(profile) {
   const s2 = SEUILS.ind2[groupe]?.[risque];
   const is2 = (profile.typeOperation === "souscription" || profile.typeOperation === "augmentation") && profile.capitalAssure > s2;
   indicators.push(genResult(2, "Somme des capitaux assuré supérieur à", is2,
-    `Capital assuré > seuil selon profil (${groupe} / ${risque === "RE" ? "RE" : "Standard"})`,
+    `Capital assuré > seuil selon profil (${groupe} / ${risque})`,
     `${(profile.capitalAssure || 0).toLocaleString("fr-TN")} DT`, s2));
 
   // 3. Prime Élevée
   const s3 = SEUILS.ind3[groupe]?.[risque];
   const is3 = (profile.typeOperation === "souscription" || profile.typeOperation === "prime") && profile.prime > s3;
   indicators.push(genResult(3, "Prime supérieure à", is3,
-    `Prime versée > seuil selon profil (${groupe} / ${risque === "RE" ? "RE" : "Standard"})`,
+    `Prime versée > seuil selon profil (${groupe} / ${risque})`,
     `${(profile.prime || 0).toLocaleString("fr-TN")} DT`, s3));
 
   // 4. Rachat Élevé
   const s4 = SEUILS.ind4[groupe]?.[risque];
   const is4 = profile.typeOperation === "rachat" && profile.valeurRachat > s4;
   indicators.push(genResult(4, "Rachat d'un contrat d'assurance vie", is4,
-    `Valeur de rachat > seuil selon profil (${groupe} / ${risque === "RE" ? "RE" : "Standard"})`,
+    `Valeur de rachat > seuil selon profil (${groupe} / ${risque})`,
     `${(profile.valeurRachat || 0).toLocaleString("fr-TN")} DT`, s4));
 
   // 5. Augmentation Capital
   const s5 = SEUILS.ind5[risque];
   const is5 = profile.typeOperation === "augmentation" && profile.augmentationCapital > s5;
   indicators.push(genResult(5, "Augmentation de la valeur des capitaux assurés", is5,
-    `Augmentation de capital > ratio selon risque (${risque === "RE" ? "> 1,25x" : "> 2x"})`,
+    `Augmentation de capital > ratio selon risque (${risque})`,
     `Ratio: x${profile.augmentationCapital || 0}`, `> ${s5}x`));
 
   // 6. Rachat Précoce

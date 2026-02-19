@@ -698,8 +698,8 @@ const AlertSimPanel = ({ activeClient, selId, updateField, addClient, lancerHist
               {ACTIVITES.map(a => <option key={a}>{a}</option>)}
             </Field>
             <Field label="Niveau de risque LCB-FT" as="select" value={currentData.niveauRisque} onChange={e => set("niveauRisque", e.target.value)}>
-              <option value="!=">Hors Relation d'Affaires (Standard)</option>
-              <option value="RE">En Relation d'Affaires (Renforcé)</option>
+              <option value="RM/RF">RM/RF (Risque Moyen / Faible)</option>
+              <option value="RE">RE (Risque Élevé)</option>
             </Field>
             <Field label="Type d'opération" as="select" value={currentData.typeOperation} onChange={e => set("typeOperation", e.target.value)}>
               {TYPES_OPERATION.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
