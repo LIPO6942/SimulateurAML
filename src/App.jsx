@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { db } from './firebase.js';
 import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, setDoc, writeBatch } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { evaluerIndicateurs, getGroupe, SEUILS, checkAlert } from './engine.js';
+import { getGroupe, SEUILS, checkAlert } from './engine.js';
 import { CLIENT_VIDE } from './data.js';
 import './styles.css';
 import { debounce } from 'lodash';
@@ -232,7 +232,7 @@ function App() {
     }
     setGlobalError(null);
     try {
-      const results = evaluerIndicateurs(form);
+      const { indicators: results } = checkAlert(form);
       const batch = writeBatch(db);
 
       const resultsRef = doc(db, 'simResults', form.id);
@@ -259,7 +259,7 @@ function App() {
     try {
       const batch = writeBatch(db);
       clients.forEach(c => {
-        const results = evaluerIndicateurs(c);
+        const { indicators: results } = checkAlert(c);
         const resRef = doc(db, "simResults", c.id);
         batch.set(resRef, { results });
 
@@ -717,11 +717,11 @@ const AlertSimPanel = ({ activeClient, selId, updateField, addClient, lancerHist
 
           <div className="sec">Indicateurs spécifiques</div>
           <div className="sim-toggles">
-            <Toggle k="paysGafi" l="Client pays liste GAFI" v={currentData.paysGafi} set={set} />
-            <Toggle k="rachatMoins90j" l="Rachat < 90 jours après souscription" v={currentData.rachatMoins90j} set={set} />
-            <Toggle k="changementBeneficiaire" l="≥ 3 changements de bénéficiaire" v={currentData.changementBeneficiaire} set={set} />
-            <Toggle k="baytIIcoherent" l="Capital Bayti incohérent avec profil" v={currentData.baytIIcoherent} set={set} />
-            <Toggle k="souscriptionsMultiples" l="≥ 3 souscriptions sur < 3 ans" v={currentData.souscriptionsMultiples} set={set} />
+            <Toggle k="paysGafi" l="Client pays liste GAFI (Scenario 1)" v={currentData.paysGafi} set={set} />
+            <Toggle k="rachatMoins90j" l="Rachat < 90 jours (Scenario 6)" v={currentData.rachatMoins90j} set={set} />
+            <Toggle k="changementBeneficiaire" l="≥ 3 modif. bénéficiaire (Scenario 7)" v={currentData.changementBeneficiaire} set={set} />
+            <Toggle k="baytIIcoherent" l="Bayti incohérent avec profil (Scenario 8)" v={currentData.baytIIcoherent} set={set} />
+            <Toggle k="souscriptionsMultiples" l="≥ 3 contrats sur 3 ans (Scenario 9)" v={currentData.souscriptionsMultiples} set={set} />
           </div>
         </div>
 
@@ -793,11 +793,11 @@ const AlertSimPanel = ({ activeClient, selId, updateField, addClient, lancerHist
 const SeuilsTable = ({ profil, groupe }) => {
   const risque = profil.niveauRisque;
   const rows = [
-    { label: "Capital souscription", val: SEUILS.ind2[groupe]?.[risque], unit: "DT" },
-    { label: "Prime souscription", val: SEUILS.ind3[groupe]?.[risque], unit: "DT" },
-    { label: "Valeur rachat", val: SEUILS.ind4[groupe]?.[risque], unit: "DT" },
-    { label: "Augmentation capital", val: SEUILS.ind6[groupe], unit: "x" },
-    { label: "Paiement espèces", val: SEUILS.ind12.seuil, unit: "DT" },
+    { label: "Capitaux assurés (Sec. 2)", val: SEUILS.ind2[groupe]?.[risque], unit: "DT" },
+    { label: "Valeur prime (Sec. 3)", val: SEUILS.ind3[groupe]?.[risque], unit: "DT" },
+    { label: "Valeur rachat (Sec. 4)", val: SEUILS.ind4[groupe]?.[risque], unit: "DT" },
+    { label: "Ratio augmentation (Sec. 5)", val: SEUILS.ind5[risque], unit: "x" },
+    { label: "Paiement espèces (Sec. 10)", val: SEUILS.ind10.seuil, unit: "DT" },
   ];
   return (
     <table className="sim-seuils-table">
