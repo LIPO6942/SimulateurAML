@@ -2,6 +2,7 @@
 
 export const CLIENT_VIDE = {
   nom: "",
+  prenom: "",
   pays: "Tunisie",
   activite: "salarié",
   niveauRisque: "RM/RF",

@@ -410,6 +410,7 @@ const Sidebar = ({ clients, selId, selectClient, addClient, deleteClient, getDot
           const k = key.trim().toLowerCase();
           const val = row[key];
           if (k === 'nom') obj.nom = val;
+          if (k === 'prenom' || k === 'prénom') obj.prenom = val;
           if (k === 'pays') obj.pays = val;
           if (k === 'activite') obj.activite = val;
           if (k === 'risque') obj.niveauRisque = val;
@@ -954,7 +955,7 @@ const BulkAnalysisView = ({ data, onClear }) => {
               return (
                 <tr key={idx} className={hasAlert ? 'row-alert' : ''}>
                   <td style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{idx + 1}</td>
-                  <td style={{ fontWeight: 'bold' }}>{item.nom || '—'}</td>
+                  <td style={{ fontWeight: 'bold' }}>{item.prenom ? `${item.prenom} ${item.nom}` : (item.nom || '—')}</td>
                   <td style={{ fontSize: '0.85rem' }}>{item.pays || '—'}</td>
                   <td>
                     <span className={`tag-risk ${(item.niveauRisque || '').replace('/', '-')}`}>
