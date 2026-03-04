@@ -67,6 +67,71 @@ export const SEUILS = {
 // ─── NOUVELLE FONCTION : checkAlert ────────────────────────────────────────────
 // Prend un profil simplifié et retourne toutes les alertes déclenchées
 
+// ─── SCORE DE RISQUE GLOBAL ──────────────────────────────────────────────────
+const GRAVITE_SCORES = {
+  critique: 10,
+  haute: 5,
+  moyenne: 2,
+  basse: 1
+};
+
+export function calculateRiskScore(indicators) {
+  const alertes = indicators.filter(ind => ind.alerte);
+  const totalScore = alertes.reduce((sum, ind) => sum + GRAVITE_SCORES[ind.gravite] || 0, 0);
+  const maxScore = indicators.reduce((sum, ind) => sum + GRAVITE_SCORES[ind.gravite] || 0, 0);
+  const percentage = maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0;
+
+  let niveau = "basse";
+  if (percentage >= 70) niveau = "critique";
+  else if (percentage >= 40) niveau = "haute";
+  else if (percentage >= 20) niveau = "moyenne";
+
+  return {
+    score: totalScore,
+    percentage,
+    niveau,
+    alertesCount: alertes.length,
+    details: alertes.map(ind => ({ id: ind.id, label: ind.label, gravite: ind.gravite }))
+  };
+}
+
+// ─── INDICATEURS COMPOSITES ──────────────────────────────────────────────────
+const COMPOSITE_INDICATORS = [
+  {
+    id: 11,
+    label: "Pays GAFI + Paiement en espèce élevé",
+    regle: "Client de pays GAFI et paiement en espèce > 5 000 DT",
+    condition: (profile, basicIndicators) => {
+      const paysRisk = basicIndicators.find(ind => ind.id === 1)?.alerte;
+      const cashRisk = basicIndicators.find(ind => ind.id === 10)?.alerte;
+      return paysRisk && cashRisk;
+    },
+    gravite: "critique"
+  },
+  {
+    id: 12,
+    label: "Capital élevé + Retrait précoce",
+    regle: "Capital assuré > seuil et retrait < 90 jours",
+    condition: (profile, basicIndicators) => {
+      const capitalRisk = basicIndicators.find(ind => ind.id === 2)?.alerte;
+      const earlyWithdrawal = basicIndicators.find(ind => ind.id === 6)?.alerte;
+      return capitalRisk && earlyWithdrawal;
+    },
+    gravite: "critique"
+  },
+  {
+    id: 13,
+    label: "Paiement en espèce + Changement fréquent de bénéficiaire",
+    regle: "Paiement en espèce > 5 000 DT et changement fréquent de bénéficiaire",
+    condition: (profile, basicIndicators) => {
+      const cashRisk = basicIndicators.find(ind => ind.id === 10)?.alerte;
+      const beneficiaryRisk = basicIndicators.find(ind => ind.id === 7)?.alerte;
+      return cashRisk && beneficiaryRisk;
+    },
+    gravite: "haute"
+  }
+];
+
 export function checkAlert(profile) {
   const groupe = getGroupe(profile.activite || "salarié");
   const risque = profile.niveauRisque || "RM/RF";
@@ -157,11 +222,29 @@ export function checkAlert(profile) {
     `Versement en espèces > seuil fixe`,
     `${(profile.paiementEspeces || 0).toLocaleString("fr-TN")} DT`, s10, "critique"));
 
+  // ─── AJOUT DES INDICATEURS COMPOSITES ────────────────────────────────────────
+  COMPOSITE_INDICATORS.forEach(ind => {
+    const isAlert = ind.condition(profile, indicators);
+    indicators.push({
+      id: ind.id,
+      label: ind.label,
+      alerte: isAlert,
+      regle: ind.regle,
+      valeurs: "Combinaison de plusieurs indicateurs",
+      seuil: "Condition composite",
+      gravite: ind.gravite
+    });
+  });
+
+  // ─── CALCUL DU SCORE DE RISQUE GLOBAL ───────────────────────────────────────
+  const riskScore = calculateRiskScore(indicators);
+
   return {
     alert: indicators.some(i => i.alerte),
     alertes: indicators.filter(i => i.alerte),
     indicators,
     groupe,
+    riskScore
   };
 }
 

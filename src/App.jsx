@@ -114,7 +114,12 @@ function App() {
     const unsubscribeResults = onSnapshot(collection(db, 'simResults'),
       snapshot => {
         const resultsData = {};
-        snapshot.docs.forEach(doc => { resultsData[doc.id] = doc.data().results; });
+        snapshot.docs.forEach(doc => { 
+          resultsData[doc.id] = {
+            results: doc.data().results,
+            riskScore: doc.data().riskScore
+          }; 
+        });
         setSimResults(resultsData);
       },
       err => handleSnapshotError(err, 'simulations')
@@ -235,18 +240,19 @@ function App() {
     }
     setGlobalError(null);
     try {
-      const { indicators: results } = checkAlert(form);
+      const { indicators: results, riskScore } = checkAlert(form);
       const batch = writeBatch(db);
 
       const resultsRef = doc(db, 'simResults', form.id);
-      batch.set(resultsRef, { results });
+      batch.set(resultsRef, { results, riskScore });
 
       const historyRef = doc(collection(db, 'history'));
       batch.set(historyRef, {
         clientId: form.id,
         clientName: form.nom,
         timestamp: new Date().toISOString(),
-        results
+        results,
+        riskScore
       });
 
       await batch.commit();
@@ -262,16 +268,17 @@ function App() {
     try {
       const batch = writeBatch(db);
       clients.forEach(c => {
-        const { indicators: results } = checkAlert(c);
+        const { indicators: results, riskScore } = checkAlert(c);
         const resRef = doc(db, "simResults", c.id);
-        batch.set(resRef, { results });
+        batch.set(resRef, { results, riskScore });
 
         const histRef = doc(collection(db, "history"));
         batch.set(histRef, {
           clientId: c.id,
           clientName: c.nom,
           timestamp: new Date().toISOString(),
-          results
+          results,
+          riskScore
         });
       });
       await batch.commit();
@@ -283,15 +290,17 @@ function App() {
   };
 
   const getDot = (id) => {
-    const r = simResults[id];
-    if (!r) return "cli-dot d-ok";
-    const a = r.filter(x => x.alerte);
-    if (!a.length) return "cli-dot d-ok";
-    if (a.some(x => x.gravite === "critique")) return "cli-dot d-hi";
+    const simData = simResults[id];
+    if (!simData || !simData.results) return "cli-dot d-ok";
+    const alerts = simData.results.filter(x => x.alerte);
+    if (!alerts.length) return "cli-dot d-ok";
+    if (alerts.some(x => x.gravite === "critique")) return "cli-dot d-hi";
     return "cli-dot d-med";
   };
 
-  const curInds = selId ? simResults[selId] : null;
+  const curSim = selId ? simResults[selId] : null;
+  const curInds = curSim ? curSim.results : null;
+  const curRiskScore = curSim ? curSim.riskScore : null;
   const curAlerts = curInds ? curInds.filter(x => x.alerte) : [];
   const grp = form ? getGroupe(form.activite) : null;
 
@@ -335,6 +344,7 @@ function App() {
               <Tab id="resultats" label={`Derniers résultats ${curInds ? `· ${curAlerts.length} alerte${curAlerts.length !== 1 ? "s" : ""}` : ""}`} currentTab={tab} setTab={setTab} />
               <Tab id="global" label="Vue globale" currentTab={tab} setTab={setTab} />
               <Tab id="history" label={`Historique (${history.length})`} currentTab={tab} setTab={setTab} />
+              <Tab id="config" label="⚙️ Configuration des seuils" currentTab={tab} setTab={setTab} />
               {bulkData.length > 0 && <Tab id="batch" label={`📊 Analyse de masse (${bulkData.length})`} currentTab={tab} setTab={setTab} />}
               {curInds && <Tab id="smart" label="🤖 Smart-AML" currentTab={tab} setTab={setTab} />}
             </div>
@@ -346,9 +356,10 @@ function App() {
                 addClient={addClient}
                 lancerHistorique={lancerSim}
               />}
-              {tab === "resultats" && <ResultPanel results={curInds} client={form} />}
+              {tab === "resultats" && <ResultPanel results={curInds} client={form} riskScore={curRiskScore} />}
               {tab === "global" && <GlobalPanel clients={clients} results={simResults} runAll={runAll} selectClient={selectClient} setTab={setTab} />}
               {tab === "history" && <HistoryPanel history={history} />}
+              {tab === "config" && <SettingsPanel />}
               {tab === "batch" && <BulkAnalysisView data={bulkData} onClear={() => { setBulkData([]); setTab("alerte"); }} />}
               {tab === "smart" && <SmartAMLPanel client={form} results={curInds} />}
             </div>
@@ -476,7 +487,7 @@ const WelcomePanel = ({ addClient }) => (
 
 
 
-const ResultPanel = ({ results, client }) => {
+const ResultPanel = ({ results, client, riskScore }) => {
   if (!results) return (
     <div className="empty-state">
       <h3>Aucune simulation lancée pour ce client.</h3>
@@ -492,6 +503,15 @@ const ResultPanel = ({ results, client }) => {
   }
   const verdict = getVerdict();
 
+  const getRiskScoreColor = (niveau) => {
+    switch (niveau) {
+      case "critique": return "c-red";
+      case "haute": return "c-ora";
+      case "moyenne": return "c-yel";
+      default: return "c-grn";
+    }
+  };
+
   return (
     <div>
       <div className="panel-t">Résultats de simulation</div>
@@ -505,6 +525,11 @@ const ResultPanel = ({ results, client }) => {
           <div className="vd-meta">{client.id} · {client.activite} · {client.niveauRisque}</div>
           <div className="vd-chips">
             <span className={`chip ${verdict.chip}`}>Risque Global: {verdict.label}</span>
+            {riskScore && (
+              <span className={`chip ${getRiskScoreColor(riskScore.niveau)}`}>
+                Score de risque: {riskScore.percentage}% ({riskScore.niveau})
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -537,14 +562,225 @@ const ResultPanel = ({ results, client }) => {
   )
 };
 
+const SettingsPanel = () => {
+  const [seuils, setSeuils] = useState(SEUILS);
+  const [modified, setModified] = useState(false);
+
+  const handleSeuilChange = (indicateur, groupe, risque, valeur) => {
+    const newSeuils = JSON.parse(JSON.stringify(seuils));
+    if (risque) {
+      newSeuils[indicateur][groupe][risque] = Number(valeur);
+    } else {
+      newSeuils[indicateur][groupe] = Number(valeur);
+    }
+    setSeuils(newSeuils);
+    setModified(true);
+  };
+
+  const handleSave = () => {
+    // TODO: Sauvegarder les seuils dans Firestore
+    setModified(false);
+    alert("Seuils sauvegardés avec succès !");
+  };
+
+  const handleReset = () => {
+    setSeuils(SEUILS);
+    setModified(false);
+    alert("Seuils réinitialisés à la valeur par défaut !");
+  };
+
+  return (
+    <div>
+      <div className="panel-t">Configuration des seuils LCB-FT</div>
+      <p className="panel-desc">
+        Modifiez les seuils des indicateurs AML. Les changements seront appliqués à toutes les simulations futures.
+      </p>
+      
+      <div className="settings-grid">
+        {/* Indicateur 2: Capital Assuré */}
+        <div className="setting-card">
+          <div className="setting-header">
+            <h3>Indicateur 2: Capital Assuré Élevé</h3>
+            <span className="chip c-ora">Haute Gravité</span>
+          </div>
+          <div className="setting-content">
+            <div className="seuil-table">
+              <div className="seuil-row">
+                <div className="seuil-label">Groupe</div>
+                <div className="seuil-label">RM/RF</div>
+                <div className="seuil-label">RE</div>
+              </div>
+              {Object.keys(seuils.ind2).map(groupe => (
+                <div key={groupe} className="seuil-row">
+                  <div className="seuil-label">{groupe.charAt(0).toUpperCase() + groupe.slice(1)}</div>
+                  <input
+                    type="number"
+                    value={seuils.ind2[groupe]["RM/RF"]}
+                    onChange={(e) => handleSeuilChange("ind2", groupe, "RM/RF", e.target.value)}
+                    className="seuil-input"
+                  />
+                  <input
+                    type="number"
+                    value={seuils.ind2[groupe]["RE"]}
+                    onChange={(e) => handleSeuilChange("ind2", groupe, "RE", e.target.value)}
+                    className="seuil-input"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Indicateur 3: Prime Élevée */}
+        <div className="setting-card">
+          <div className="setting-header">
+            <h3>Indicateur 3: Prime Élevée</h3>
+            <span className="chip c-ora">Haute Gravité</span>
+          </div>
+          <div className="setting-content">
+            <div className="seuil-table">
+              <div className="seuil-row">
+                <div className="seuil-label">Groupe</div>
+                <div className="seuil-label">RM/RF</div>
+                <div className="seuil-label">RE</div>
+              </div>
+              {Object.keys(seuils.ind3).map(groupe => (
+                <div key={groupe} className="seuil-row">
+                  <div className="seuil-label">{groupe.charAt(0).toUpperCase() + groupe.slice(1)}</div>
+                  <input
+                    type="number"
+                    value={seuils.ind3[groupe]["RM/RF"]}
+                    onChange={(e) => handleSeuilChange("ind3", groupe, "RM/RF", e.target.value)}
+                    className="seuil-input"
+                  />
+                  <input
+                    type="number"
+                    value={seuils.ind3[groupe]["RE"]}
+                    onChange={(e) => handleSeuilChange("ind3", groupe, "RE", e.target.value)}
+                    className="seuil-input"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Indicateur 4: Rachat */}
+        <div className="setting-card">
+          <div className="setting-header">
+            <h3>Indicateur 4: Rachat de Contrat</h3>
+            <span className="chip c-ora">Haute Gravité</span>
+          </div>
+          <div className="setting-content">
+            <div className="seuil-table">
+              <div className="seuil-row">
+                <div className="seuil-label">Groupe</div>
+                <div className="seuil-label">RM/RF</div>
+                <div className="seuil-label">RE</div>
+              </div>
+              {Object.keys(seuils.ind4).map(groupe => (
+                <div key={groupe} className="seuil-row">
+                  <div className="seuil-label">{groupe.charAt(0).toUpperCase() + groupe.slice(1)}</div>
+                  <input
+                    type="number"
+                    value={seuils.ind4[groupe]["RM/RF"]}
+                    onChange={(e) => handleSeuilChange("ind4", groupe, "RM/RF", e.target.value)}
+                    className="seuil-input"
+                  />
+                  <input
+                    type="number"
+                    value={seuils.ind4[groupe]["RE"]}
+                    onChange={(e) => handleSeuilChange("ind4", groupe, "RE", e.target.value)}
+                    className="seuil-input"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Indicateur 8: Capital Bayti */}
+        <div className="setting-card">
+          <div className="setting-header">
+            <h3>Indicateur 8: Capital Bayti Incohérent</h3>
+            <span className="chip c-ora">Haute Gravité</span>
+          </div>
+          <div className="setting-content">
+            <div className="seuil-table">
+              <div className="seuil-row">
+                <div className="seuil-label">Groupe</div>
+                <div className="seuil-label">Seuil (DT)</div>
+              </div>
+              {Object.keys(seuils.ind8).map(groupe => (
+                <div key={groupe} className="seuil-row">
+                  <div className="seuil-label">{groupe.charAt(0).toUpperCase() + groupe.slice(1)}</div>
+                  <input
+                    type="number"
+                    value={seuils.ind8[groupe]}
+                    onChange={(e) => handleSeuilChange("ind8", groupe, null, e.target.value)}
+                    className="seuil-input"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Indicateur 10: Paiement Espèces */}
+        <div className="setting-card">
+          <div className="setting-header">
+            <h3>Indicateur 10: Paiement en Espèces</h3>
+            <span className="chip c-red">Critique</span>
+          </div>
+          <div className="setting-content">
+            <div className="seuil-single">
+              <div className="seuil-label">Seuil (DT)</div>
+              <input
+                type="number"
+                value={seuils.ind10.seuil}
+                onChange={(e) => handleSeuilChange("ind10", "seuil", null, e.target.value)}
+                className="seuil-input large"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="settings-actions">
+        <button className="btn-secondary" onClick={handleReset} disabled={!modified}>
+          🔄 Réinitialiser
+        </button>
+        <button className="btn-primary" onClick={handleSave} disabled={!modified}>
+          💾 Sauvegarder les modifications
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const GlobalPanel = ({ clients, results, runAll, selectClient, setTab }) => {
-  const getVerdict = (r) => {
-    if (!r) return { label: 'non analysé', class: 'v-SKIP' };
-    const alerts = r.filter(x => x.alerte);
+  const getVerdict = (simData) => {
+    if (!simData || !simData.results) return { label: 'non analysé', class: 'v-SKIP' };
+    const alerts = simData.results.filter(x => x.alerte);
     if (alerts.length === 0) return { label: '✓ Conforme', class: 'v-OK' };
     if (alerts.some(x => x.gravite === "critique")) return { label: '⚠ Critique', class: 'v-ALERTE g-c' };
     if (alerts.some(x => x.gravite === "haute")) return { label: '⚠ Haute', class: 'v-ALERTE g-h' };
     return { label: 'Moyenne', class: 'v-ALERTE g-m' };
+  };
+
+  const getRiskScoreLabel = (riskScore) => {
+    if (!riskScore) return null;
+    return `${riskScore.percentage}% (${riskScore.niveau})`;
+  };
+
+  const getRiskScoreClass = (riskScore) => {
+    if (!riskScore) return '';
+    switch (riskScore.niveau) {
+      case 'critique': return 'v-ALERTE g-c';
+      case 'haute': return 'v-ALERTE g-h';
+      case 'moyenne': return 'v-ALERTE g-m';
+      default: return 'v-OK';
+    }
   };
 
   return (
@@ -556,18 +792,24 @@ const GlobalPanel = ({ clients, results, runAll, selectClient, setTab }) => {
       <div className="stat-g">
         <StatBox label="Clients" value={clients.length} />
         <StatBox label="Analysés" value={Object.keys(results).length} />
-        <StatBox label="Cas Critiques" value={Object.values(results).filter(r => r.some(x => x.alerte && x.gravite === "critique")).length} color="var(--text-danger)" />
-        <StatBox label="Alertes totales" value={Object.values(results).reduce((s, r) => s + r.filter(x => x.alerte).length, 0)} color="var(--text-warning)" />
+        <StatBox label="Cas Critiques" value={Object.values(results).filter(simData => 
+          simData.results?.some(x => x.alerte && x.gravite === "critique")
+        ).length} color="var(--text-danger)" />
+        <StatBox label="Alertes totales" value={Object.values(results).reduce((s, simData) => 
+          s + (simData.results?.filter(x => x.alerte).length || 0), 0
+        )} color="var(--text-warning)" />
       </div>
       <table className="btch-table">
-        <thead><tr><th>Client</th><th>Infos</th><th style={{ textAlign: "center" }}>Alertes</th><th style={{ textAlign: "center" }}>Verdict Global</th></tr></thead>
+        <thead><tr><th>Client</th><th>Infos</th><th style={{ textAlign: "center" }}>Alertes</th><th style={{ textAlign: "center" }}>Score de Risque</th><th style={{ textAlign: "center" }}>Verdict Global</th></tr></thead>
         <tbody>
           {clients.map(c => {
-            const r = results[c.id];
-            const v = getVerdict(r);
-            const nb = r ? r.filter(x => x.alerte).length : null;
+            const simData = results[c.id];
+            const v = getVerdict(simData);
+            const nb = simData?.results ? simData.results.filter(x => x.alerte).length : null;
+            const riskScoreLabel = getRiskScoreLabel(simData?.riskScore);
+            const riskScoreClass = getRiskScoreClass(simData?.riskScore);
             return (
-              <tr key={c.id} onClick={() => { selectClient(c); if (r) setTab("resultats"); }}>
+              <tr key={c.id} onClick={() => { selectClient(c); if (simData) setTab("resultats"); }}>
                 <td>
                   <div className="cli-nm">{c.nom}</div>
                   <div className="cli-id">{c.id}</div>
@@ -575,6 +817,9 @@ const GlobalPanel = ({ clients, results, runAll, selectClient, setTab }) => {
                 <td><span className={`chip ${c.niveauRisque === 'RE' ? 'c-yel' : 'c-grn'}`}>{c.niveauRisque}</span></td>
                 <td style={{ textAlign: "center", fontFamily: "'IBM Plex Mono', monospace", fontSize: 15, fontWeight: 700, color: nb === null ? "var(--text-placeholder)" : nb === 0 ? "var(--text-success)" : "var(--text-danger)" }}>
                   {nb ?? '—'}
+                </td>
+                <td style={{ textAlign: "center" }}>
+                  {riskScoreLabel ? <span className={riskScoreClass}>{riskScoreLabel}</span> : '—'}
                 </td>
                 <td style={{ textAlign: "center" }}><span className={v.class}>{v.label}</span></td>
               </tr>

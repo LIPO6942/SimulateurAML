@@ -26,8 +26,9 @@ src/
 └── styles.css    → Styles globaux
 ```
 
-## Les 10 Scénarios
+## Les 13 Scénarios (10 de base + 3 composites)
 
+### Scénarios de base
 | # | Scénario | Gravité |
 |---|----------|---------|
 | 1 | Pays Liste GAFI | Critique |
@@ -40,6 +41,27 @@ src/
 | 8 | Capital assuré Produit Bayti incohérent | Haute |
 | 9 | Souscriptions multiples court délai | Moyenne |
 | 10 | Paiement en espèce (> 5 000 DT) | Critique |
+
+### Scénarios composites (combinaisons de règles)
+| # | Scénario | Gravité |
+|---|----------|---------|
+| 11 | Pays GAFI + Paiement en espèce élevé | Critique |
+| 12 | Capital élevé + Retrait précoce | Critique |
+| 13 | Paiement en espèce + Changement fréquent de bénéficiaire | Haute |
+
+## Score de Risque Global
+
+Un score de risque global est calculé pour chaque client en fonction :
+- Du nombre d'alertes déclenchées
+- De la gravité des alertes (critique = 10 pts, haute = 5 pts, moyenne = 2 pts, basse = 1 pt)
+
+### Interprétation du score
+| Pourcentage | Niveau de risque |
+|---|------------------|
+| ≥ 70% | Critique |
+| 40-69% | Haute |
+| 20-39% | Moyenne |
+| < 20% | Basse |
 
 ## Seuils dynamiques (Sen. 2, 3, 4)
 
