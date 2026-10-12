@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   analyzeTransactionImageWithGroq,
   evaluateTransactionDataWithGroq,
@@ -44,6 +44,7 @@ const EXEMPLE_CAPTURE_REELLE = {
 export default function TransactionCaptureAnalyzer() {
   const [imagePreview, setImagePreview] = useState(null);
   const [imageBase64, setImageBase64] = useState(null);
+  const [pasteNotice, setPasteNotice] = useState(null);
   const [apiKey, setApiKey] = useState(getGroqApiKey());
   const [showKeyInput, setShowKeyInput] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -53,6 +54,7 @@ export default function TransactionCaptureAnalyzer() {
   const [showFieldsEditor, setShowFieldsEditor] = useState(false);
   const [result, setResult] = useState(null);
   const [copiedField, setCopiedField] = useState(null);
+  const dropZoneRef = useRef(null);
 
   // Initialisation automatique avec l'exemple pour avoir un résultat dès le départ
   useEffect(() => {
@@ -60,34 +62,101 @@ export default function TransactionCaptureAnalyzer() {
     setResult(defaultEval);
   }, []);
 
-  // Écoute de l'événement "Coller" (Ctrl+V) n'importe où dans la page
-  useEffect(() => {
-    const handlePaste = (e) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      for (let i = 0; i < items.length; i++) {
-        if (items[i].type.indexOf('image') !== -1) {
-          const file = items[i].getAsFile();
-          if (file) {
-            handleImageFile(file);
-          }
-          break;
-        }
-      }
-    };
-    window.addEventListener('paste', handlePaste);
-    return () => window.removeEventListener('paste', handlePaste);
-  }, [apiKey]);
-
-  const handleImageFile = (file) => {
+  const handleImageFile = useCallback((file) => {
+    if (!file) return;
     setError(null);
     const reader = new FileReader();
     reader.onload = (e) => {
       const dataUrl = e.target.result;
       setImagePreview(dataUrl);
       setImageBase64(dataUrl);
+      setPasteNotice("✓ Capture d'écran collée avec succès !");
+      setTimeout(() => setPasteNotice(null), 3000);
     };
     reader.readAsDataURL(file);
+  }, []);
+
+  // Détection d'une image dans les données du presse-papier
+  const processClipboardData = useCallback((clipboardData) => {
+    if (!clipboardData) return false;
+
+    // 1. Examiner les fichiers directs (ex: capture d'écran Windows Snipping Tool)
+    if (clipboardData.files && clipboardData.files.length > 0) {
+      for (let i = 0; i < clipboardData.files.length; i++) {
+        const file = clipboardData.files[i];
+        if (file.type && file.type.startsWith('image/')) {
+          handleImageFile(file);
+          return true;
+        }
+      }
+    }
+
+    // 2. Examiner les items du presse-papier (e.clipboardData.items)
+    if (clipboardData.items && clipboardData.items.length > 0) {
+      for (let i = 0; i < clipboardData.items.length; i++) {
+        const item = clipboardData.items[i];
+        if (item.type && item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            handleImageFile(file);
+            return true;
+          }
+        }
+      }
+    }
+
+    return false;
+  }, [handleImageFile]);
+
+  // Écoute globale de l'événement "Coller" (Ctrl+V) n'importe où dans la page
+  useEffect(() => {
+    const onPaste = (e) => {
+      const clipboardData = e.clipboardData || window.clipboardData;
+      if (processClipboardData(clipboardData)) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
+    window.addEventListener('paste', onPaste, true);
+    document.addEventListener('paste', onPaste, true);
+    return () => {
+      window.removeEventListener('paste', onPaste, true);
+      document.removeEventListener('paste', onPaste, true);
+    };
+  }, [processClipboardData]);
+
+  // Bouton pour coller directement via l'API presse-papier du navigateur
+  const handlePasteFromClipboardApi = async () => {
+    try {
+      if (!navigator.clipboard?.read) {
+        setPasteNotice("Appuyez simplement sur Ctrl + V sur votre clavier pour coller.");
+        setTimeout(() => setPasteNotice(null), 4000);
+        return;
+      }
+      const clipboardItems = await navigator.clipboard.read();
+      let foundImage = false;
+      for (const item of clipboardItems) {
+        for (const type of item.types) {
+          if (type.startsWith('image/')) {
+            const blob = await item.getType(type);
+            handleImageFile(blob);
+            foundImage = true;
+            break;
+          }
+        }
+        if (foundImage) break;
+      }
+      if (!foundImage) {
+        setError("Aucune image trouvée dans le presse-papier. Faites d'abord une capture avec Win + Shift + S.");
+      }
+    } catch (err) {
+      console.warn("Erreur presse-papier:", err);
+      // Fallback
+      setPasteNotice("Presse-papier prêt : appuyez sur Ctrl + V sur votre clavier !");
+      setTimeout(() => setPasteNotice(null), 4000);
+      if (dropZoneRef.current) dropZoneRef.current.focus();
+    }
   };
 
   const handleFileUpload = (e) => {
@@ -229,9 +298,24 @@ export default function TransactionCaptureAnalyzer() {
 
       {/* ─── ZONE D'IMPORTATION / CAPTURE D'ÉCRAN ─────────────────────────── */}
       <div className="analyzer-drop-zone-card card">
+        {pasteNotice && (
+          <div className="paste-success-alert anim-fade">
+            <span>{pasteNotice}</span>
+          </div>
+        )}
         <div className="drop-zone-grid">
           <div
+            ref={dropZoneRef}
             className={`drop-zone ${imagePreview ? 'has-image' : ''}`}
+            tabIndex={0}
+            title="Cliquez ici et faites Ctrl + V pour coller votre capture d'écran"
+            onPaste={(e) => {
+              const cb = e.clipboardData || window.clipboardData;
+              if (processClipboardData(cb)) {
+                e.preventDefault();
+                e.stopPropagation();
+              }
+            }}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               e.preventDefault();
@@ -253,20 +337,30 @@ export default function TransactionCaptureAnalyzer() {
                   ✕ Supprimer
                 </button>
                 <div className="image-overlay-info">
-                  ✓ Capture chargée prête pour l'analyse
+                  ✓ Capture chargée depuis le presse-papier
                 </div>
               </div>
             ) : (
               <div className="drop-zone-placeholder">
-                <div className="drop-icon">📷</div>
+                <div className="drop-icon">📋</div>
                 <div className="drop-main-text">
-                  <strong>Collez directement votre capture ici avec Ctrl + V</strong>
+                  <strong>Collez directement avec Ctrl + V</strong>
                 </div>
                 <div className="drop-sub-text">
-                  ou glissez-déposez une image (capture d'écran RegTools ou modal Infos supplémentaires)
+                  Exactement comme coller du texte : faites votre capture d'écran puis tapez <strong>Ctrl + V</strong> n'importe où !
                 </div>
-                <label className="browse-file-btn">
-                  Parcourir une image
+                <div style={{ marginTop: 14 }}>
+                  <button
+                    type="button"
+                    className="btn-accent paste-btn-large"
+                    onClick={handlePasteFromClipboardApi}
+                    title="Cliquez pour coller directement l'image présente dans votre presse-papier"
+                  >
+                    📋 Coller la capture du presse-papier
+                  </button>
+                </div>
+                <label className="browse-file-sublink">
+                  ou importer une image depuis l'ordinateur
                   <input
                     type="file"
                     accept="image/*"
