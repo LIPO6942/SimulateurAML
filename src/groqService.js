@@ -327,10 +327,10 @@ Renvoie STRICTEMENT un JSON correspondant au schéma attendu.`;
  */
 export function evaluateTransactionLocally(rawFields = {}) {
     // Normalisation des champs
-    const nom = rawFields.NOM_ADH || rawFields.nom || "DHOUIBI IKBEL";
+    const nom = rawFields.NOM_ADH || rawFields.nom || "BEN SALAH SAMI";
     const titre = rawFields.LIB_TIT || rawFields.titre || "Docteur";
     const prof = rawFields.LIB_PROF || rawFields.profession || "MEDECIN (CABINET)";
-    const cin = rawFields.CIN || rawFields.cin || "7672608";
+    const cin = rawFields.CIN || rawFields.cin || "08123456";
     const agence = rawFields.AGENCE || rawFields.agence || "106";
     const police = rawFields.N_POLICE || rawFields.police || "101322613";
     const effPol = rawFields.EFF_POL || rawFields.dateEffet || "20/10/2021";

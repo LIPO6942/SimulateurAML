@@ -7,7 +7,7 @@ import {
   setGroqApiKey
 } from './groqService.js';
 
-// Données d'exemple réelles correspondant exactement aux captures d'écran de l'utilisateur
+// Données d'exemple anonymisées correspondant au cas d'usage réel
 const EXEMPLE_CAPTURE_REELLE = {
   N_CLIENT: "870255",
   CT: "12",
@@ -15,7 +15,7 @@ const EXEMPLE_CAPTURE_REELLE = {
   S: "C",
   DT_NAISS: "01/03/1985",
   NAT_P: "1",
-  CIN: "7672608",
+  CIN: "08123456",
   V_CIN: "TUNIS",
   DT_CIN: "08/08/2007",
   AGENCE: "106",
@@ -36,7 +36,7 @@ const EXEMPLE_CAPTURE_REELLE = {
   MIN_CAP: "0",
   C_PROF: "36",
   LIB_PROF: "MEDECIN (CABINET)",
-  NOM_ADH: "DHOUIBI IKBEL",
+  NOM_ADH: "BEN SALAH SAMI",
   CSTATUT: "0",
   source_system: "Auto/Inds"
 };
@@ -140,7 +140,7 @@ export default function TransactionCaptureAnalyzer() {
     setResult(localResult);
   };
 
-  // Réinitialiser avec l'exemple Dr. Ikbel Dhouibi
+  // Réinitialiser avec l'exemple type (Médecin - Espèces)
   const handleLoadRealExample = () => {
     setExtractedFields(EXEMPLE_CAPTURE_REELLE);
     setImagePreview(null);
@@ -198,9 +198,9 @@ export default function TransactionCaptureAnalyzer() {
             <button
               className="btn-accent"
               onClick={handleLoadRealExample}
-              title="Recharger l'exemple réel du Dr. IKBEL DHOUIBI"
+              title="Recharger l'exemple type (Médecin - Paiement espèces)"
             >
-              🔄 Exemple Dr. IKBEL DHOUIBI
+              🔄 Exemple Quittance (Médecin)
             </button>
           </div>
         </div>
