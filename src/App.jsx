@@ -8,7 +8,7 @@ import './styles.css';
 import { debounce } from 'lodash';
 import * as XLSX from 'xlsx';
 import { generateAMLReport } from './groqService.js';
-
+import TransactionCaptureAnalyzer from './TransactionCaptureAnalyzer.jsx';
 
 const auth = getAuth();
 
@@ -337,10 +337,27 @@ function App() {
             </div>
           </div>
         )}
-        {clients.length > 0 && form ? (
+        {tab === "capture" ? (
           <>
             <div className="tabs">
               <Tab id="alerte" label="🔎 Simulation d'alerte" currentTab={tab} setTab={setTab} />
+              <Tab id="capture" label="📸 Capture RegTools" currentTab={tab} setTab={setTab} />
+              <Tab id="resultats" label={`Derniers résultats ${curInds ? `· ${curAlerts.length} alerte${curAlerts.length !== 1 ? "s" : ""}` : ""}`} currentTab={tab} setTab={setTab} />
+              <Tab id="global" label="Vue globale" currentTab={tab} setTab={setTab} />
+              <Tab id="history" label={`Historique (${history.length})`} currentTab={tab} setTab={setTab} />
+              <Tab id="config" label="⚙️ Configuration des seuils" currentTab={tab} setTab={setTab} />
+              {bulkData.length > 0 && <Tab id="batch" label={`📊 Analyse de masse (${bulkData.length})`} currentTab={tab} setTab={setTab} />}
+              {curInds && <Tab id="smart" label="🤖 Smart-AML" currentTab={tab} setTab={setTab} />}
+            </div>
+            <div className="cnt">
+              <TransactionCaptureAnalyzer />
+            </div>
+          </>
+        ) : clients.length > 0 && form ? (
+          <>
+            <div className="tabs">
+              <Tab id="alerte" label="🔎 Simulation d'alerte" currentTab={tab} setTab={setTab} />
+              <Tab id="capture" label="📸 Capture RegTools" currentTab={tab} setTab={setTab} />
               <Tab id="resultats" label={`Derniers résultats ${curInds ? `· ${curAlerts.length} alerte${curAlerts.length !== 1 ? "s" : ""}` : ""}`} currentTab={tab} setTab={setTab} />
               <Tab id="global" label="Vue globale" currentTab={tab} setTab={setTab} />
               <Tab id="history" label={`Historique (${history.length})`} currentTab={tab} setTab={setTab} />
@@ -365,7 +382,7 @@ function App() {
             </div>
           </>
         ) : (
-          <WelcomePanel addClient={addClient} />
+          <WelcomePanel addClient={addClient} setTab={setTab} />
         )}
       </main>
     </div>
@@ -477,11 +494,18 @@ const Tab = ({ id, label, currentTab, setTab }) => (
   <div className={`tab ${currentTab === id ? "on" : ""}`} onClick={() => setTab(id)}>{label}</div>
 );
 
-const WelcomePanel = ({ addClient }) => (
+const WelcomePanel = ({ addClient, setTab }) => (
   <div className="welcome-panel">
-    <h2>Bienvenue sur le Simulateur</h2>
-    <p>Aucun client dans le portefeuille pour le moment. Cliquez sur le bouton ci-dessous pour commencer.</p>
-    <button className="run" onClick={addClient}>+ Créer le premier client</button>
+    <h2>Bienvenue sur le Simulateur AML</h2>
+    <p>Gérez vos clients ou analysez directement une capture d'écran d'alerte RegTools.</p>
+    <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 15, flexWrap: 'wrap' }}>
+      <button className="run" onClick={addClient}>+ Créer un client</button>
+      {setTab && (
+        <button className="btn-accent" onClick={() => setTab("capture")}>
+          📸 Analyser une capture RegTools
+        </button>
+      )}
+    </div>
   </div>
 );
 
