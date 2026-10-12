@@ -133,11 +133,30 @@ export async function generateAMLReport(clientData, alertResults) {
         throw new Error("Réponse vide de l'API Groq.");
     }
 
-    try {
-        return JSON.parse(content);
-    } catch {
-        throw new Error("Réponse JSON invalide de l'API Groq.");
+    return parseSafeJson(content);
+}
+
+/**
+ * Extrait et parse de manière robuste un texte contenant du JSON (enlève markdown, espaces, etc.)
+ */
+function parseSafeJson(content) {
+    if (!content) throw new Error("Contenu vide reçu de l'IA.");
+    let text = content.trim();
+
+    // Enlever d'éventuels blocs markdown ```json ... ```
+    const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (codeBlockMatch) {
+        text = codeBlockMatch[1].trim();
     }
+
+    // Isoler l'objet JSON entre le premier { et le dernier }
+    const firstBrace = text.indexOf('{');
+    const lastBrace = text.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        text = text.substring(firstBrace, lastBrace + 1);
+    }
+
+    return JSON.parse(text);
 }
 
 // ─── ANALYSE DE CAPTURE DE TRANSACTION / REGTOOLS ─────────────────────────────
@@ -212,10 +231,9 @@ export async function analyzeTransactionImageWithGroq(imageBase64) {
         ? imageBase64 
         : `data:image/png;base64,${imageBase64}`;
 
-    // On essaye d'abord le modèle Vision performant de Groq
+    // Modèle Vision multimodal actif sur Groq (Qwen 3.8 27B multimodal)
     const visionModels = [
-        "llama-3.2-11b-vision-preview",
-        "llama-3.2-90b-vision-preview"
+        "qwen/qwen3.8-27b"
     ];
 
     let lastError = null;
@@ -260,14 +278,14 @@ export async function analyzeTransactionImageWithGroq(imageBase64) {
             const data = await response.json();
             const content = data.choices?.[0]?.message?.content;
             if (content) {
-                return JSON.parse(content);
+                return parseSafeJson(content);
             }
         } catch (err) {
             lastError = err;
         }
     }
 
-    throw lastError || new Error("Échec de l'analyse avec les modèles Vision de Groq.");
+    throw lastError || new Error("Échec de l'analyse avec le modèle Vision de Groq (qwen/qwen3.8-27b).");
 }
 
 /**
@@ -312,7 +330,7 @@ Renvoie STRICTEMENT un JSON correspondant au schéma attendu.`;
             const resData = await response.json();
             const content = resData.choices?.[0]?.message?.content;
             if (content) {
-                return JSON.parse(content);
+                return parseSafeJson(content);
             }
         }
     } catch {

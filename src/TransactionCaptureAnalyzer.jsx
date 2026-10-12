@@ -62,14 +62,53 @@ export default function TransactionCaptureAnalyzer() {
     setResult(defaultEval);
   }, []);
 
+  // Optimisation de l'image (redimensionnement si > 1800px ou > 2 Mo pour l'API Groq)
+  const compressImageIfNeeded = (dataUrl, maxDimension = 1800, quality = 0.85) => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        const needResize = width > maxDimension || height > maxDimension;
+        if (!needResize && dataUrl.length < 2 * 1024 * 1024) {
+          resolve(dataUrl);
+          return;
+        }
+
+        if (needResize) {
+          if (width > height) {
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
+          } else {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  };
+
   const handleImageFile = useCallback((file) => {
     if (!file) return;
     setError(null);
     const reader = new FileReader();
-    reader.onload = (e) => {
-      const dataUrl = e.target.result;
-      setImagePreview(dataUrl);
-      setImageBase64(dataUrl);
+    reader.onload = async (e) => {
+      const rawDataUrl = e.target.result;
+      setImagePreview(rawDataUrl);
+      try {
+        const optimized = await compressImageIfNeeded(rawDataUrl);
+        setImageBase64(optimized);
+      } catch {
+        setImageBase64(rawDataUrl);
+      }
       setPasteNotice("✓ Capture d'écran collée avec succès !");
       setTimeout(() => setPasteNotice(null), 3000);
     };
@@ -180,7 +219,7 @@ export default function TransactionCaptureAnalyzer() {
     setError(null);
     try {
       if (imageBase64 && apiKey) {
-        setLoadingStep("Lecture visuelle de la capture via Groq Vision (llama-3.2)...");
+        setLoadingStep("Lecture visuelle de la capture via Groq Vision (Qwen 3.8 27B)...");
         const aiResult = await analyzeTransactionImageWithGroq(imageBase64);
         if (aiResult.champs_extraits) {
           setExtractedFields(prev => ({ ...prev, ...aiResult.champs_extraits }));
