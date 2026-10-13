@@ -172,6 +172,314 @@ En application de l'article 20 de la Loi organique n°2015-26 modifiée par la l
 }
 
 /**
+ * Référentiel de mapping officiel des Branches et Compagnies / Produits d'assurance
+ * Intègre l'ensemble des branches :
+ * - C_BR = 'A' : Automobile (MONO, FLOTTE)
+ * - C_BR = 'B' : Habitation (BEYTI 271-277)
+ * - C_BR = 'I' : Incendie & Pertes d'exploitation (INC 300, Risques Simples & Industriels)
+ * - C_BR = 'M' : Multirisques Professionnelles (MULTI_PROF 280, MAPL 1 & 2)
+ * - C_BR = 'C' : Accidents Corporels & Assistance Voyage (ACCIDENT 208, SAFER 211-213, PRIV_PROF 210)
+ * - C_BR = 'N' : Risques Agricoles (Agricole 350)
+ * - C_BR = 'G' : Santé & Maladie (MALA_INDIV 400, MALA_GRPE 401)
+ * - C_BR = 'E' : Épargne & Assurance Vie (EPARGNE 600-604)
+ */
+export const BRANCHES_MAPPING = {
+  A: {
+    code: "A",
+    nom: "Automobile",
+    branche: "Non-Vie",
+    source_system: "Auto/Irds",
+    cies: [
+      { n_cie: "10", lib_cie: "MONOBRANCHE", lib_branche: "Auto standard / Mono" },
+      { n_cie: "17", lib_cie: "AUTO_FLOTTE", lib_branche: "Flotte Automobile" },
+      { n_cie: "210", lib_cie: "AUTO_SPECIF", lib_branche: "Véhicules professionnels" }
+    ],
+    scenarios: ["SCEN_01", "SCEN_02", "SCEN_04", "SCEN_10"]
+  },
+  B: {
+    code: "B",
+    nom: "Habitation / Multirisque Habitation (MRH - BEYTI)",
+    branche: "Non-Vie",
+    source_system: "auto",
+    cies: [
+      { n_cie: "271", lib_cie: "BEYTI_PLUS", lib_branche: "Formule Plus" },
+      { n_cie: "272", lib_cie: "BEYTI_CONF", lib_branche: "Formule Confort" },
+      { n_cie: "273", lib_cie: "BEYTI_IMME", lib_branche: "Immeuble / Propriétaire" },
+      { n_cie: "274", lib_cie: "BEYTI_CHIC", lib_branche: "Formule Haut de Gamme" },
+      { n_cie: "276", lib_cie: "BEYTI_ASSU", lib_branche: "Formule Essentielle" },
+      { n_cie: "277", lib_cie: "BEYTI_FORM", lib_branche: "Multirisque Standard" }
+    ],
+    scenarios: ["SCEN_08", "SCEN_01", "SCEN_02", "SCEN_04", "SCEN_10"]
+  },
+  I: {
+    code: "I",
+    nom: "Incendie & Pertes d'exploitation (INC)",
+    branche: "Non-Vie",
+    source_system: "Auto/Irds",
+    cies: [
+      {
+        n_cie: "300",
+        lib_cie: "INC",
+        lib_branches: [
+          "RISQUES SIMPLES", "Risques simples (TD)", "RISQUES INDUSTRIELS",
+          "Perte d'exploitation apres incend", "Forfait incendie", "INCENDIE FORFAIT",
+          "Incendie crédit", "INCENDIE INDUSTRIELS", "Incendie Crédit AC&PL",
+          "Incendie Risque Simple", "Incendie Crédit Activité Indust"
+        ]
+      }
+    ],
+    scenarios: ["SCEN_01", "SCEN_02", "SCEN_04", "SCEN_10"]
+  },
+  M: {
+    code: "M",
+    nom: "Multirisques Professionnelles (MAPL)",
+    branche: "Non-Vie",
+    source_system: "Auto/Irds",
+    cies: [
+      {
+        n_cie: "280",
+        lib_cie: "MULTI_PROF",
+        lib_branches: [
+          "Forfait", "MAPL Formule 1", "MULTIRISQUES", "MAPL Formule 2"
+        ]
+      }
+    ],
+    scenarios: ["SCEN_01", "SCEN_02", "SCEN_04", "SCEN_10"]
+  },
+  C: {
+    code: "C",
+    nom: "Accidents Corporels & Assistance Voyage (SAFER)",
+    branche: "Non-Vie",
+    source_system: "Auto/Irds",
+    cies: [
+      { n_cie: "205", lib_cie: "vi_sco_ext", lib_branche: "Vie Scolaire Extra-scolaire" },
+      { n_cie: "206", lib_cie: "AGRICO_IAC", lib_branche: "Agricoles Individuelle Accident" },
+      { n_cie: "207", lib_cie: "PF_IND_ACC", lib_branche: "Pack Foyer / Classe des Professions" },
+      { n_cie: "208", lib_cie: "ACCIDENT", lib_branche: "Individuelle Accident (Classes 1-4, Forfait, Annuel)" },
+      { n_cie: "209", lib_cie: "PRIV_TRAJ", lib_branche: "Accident Trajet & Vie Privée" },
+      { n_cie: "210", lib_cie: "PRIV_PROF / INDIV_ACC", lib_branche: "Accidents Professionnels & Privés" },
+      { n_cie: "211", lib_cie: "SAFER_IND", lib_branche: "Assistance Voyage SAFER Individuel (7j-180j / Omra / Annuel)" },
+      { n_cie: "212", lib_cie: "SAFER_GPE", lib_branche: "Assistance Voyage SAFER Groupe" },
+      { n_cie: "213", lib_cie: "SAFER_FAM", lib_branche: "Assistance Voyage SAFER Famille" }
+    ],
+    scenarios: ["SCEN_01", "SCEN_02", "SCEN_04", "SCEN_10"]
+  },
+  N: {
+    code: "N",
+    nom: "Risques Agricoles",
+    branche: "Non-Vie",
+    source_system: "Auto/Irds",
+    cies: [
+      { n_cie: "350", lib_cie: "Agricole", lib_branche: "Agricole Forfait & Cultures" }
+    ],
+    scenarios: ["SCEN_01", "SCEN_02", "SCEN_04", "SCEN_10"]
+  },
+  G: {
+    code: "G",
+    nom: "Santé & Maladie (Groupe / Individuel)",
+    branche: "Non-Vie",
+    source_system: "Auto/Irds",
+    cies: [
+      { n_cie: "400", lib_cie: "MALA_INDIV", lib_branche: "Maladie Individuelle" },
+      { n_cie: "401", lib_cie: "MALA_GRPE", lib_branche: "Maladie Groupe / Entreprise" }
+    ],
+    scenarios: ["SCEN_01", "SCEN_02", "SCEN_04", "SCEN_10"]
+  },
+  E: {
+    code: "E",
+    nom: "Épargne & Assurance Vie",
+    branche: "Vie",
+    source_system: "vie encaissement",
+    cies: [
+      { n_cie: "600", lib_cie: "EPARGNE_PROJ", lib_branche: "Épargne Projet" },
+      { n_cie: "601", lib_cie: "EPARGNE_RET", lib_branche: "Épargne Retraite" },
+      { n_cie: "602", lib_cie: "EPARGNE_TRAN", lib_branche: "Épargne Transmission" },
+      { n_cie: "603", lib_cie: "EPARGNE_ETUD", lib_branche: "Épargne Études" },
+      { n_cie: "604", lib_cie: "EPARGNE_INVE", lib_branche: "Épargne Investissement" }
+    ],
+    scenarios: ["SCEN_03", "SCEN_05", "SCEN_06", "SCEN_07", "SCEN_09", "SCEN_10", "SCEN_11", "SCEN_12", "SCEN_13", "SCEN_04"]
+  },
+  P: {
+    code: "P",
+    nom: "Prévoyance & Décès (PREV / IDR)",
+    branche: "Vie",
+    source_system: "vie encaissement",
+    cies: [
+      { n_cie: "650", lib_cie: "PREVOYANC", lib_branche: "Prévoyance Individuelle" },
+      { n_cie: "655", lib_cie: "PREV_MIXTE", lib_branche: "Prévoyance Mixte" },
+      { n_cie: "656", lib_cie: "PREVOYA_ES", lib_branche: "Prévoyance Entreprise" },
+      { n_cie: "660", lib_cie: "Coll_Deces", lib_branche: "Contrat Collectif Décès" },
+      { n_cie: "665", lib_cie: "IDR", lib_branche: "Contrat IDR (Indemnités Départ Retraite)" }
+    ],
+    scenarios: ["SCEN_07", "SCEN_10", "SCEN_04", "SCEN_01", "SCEN_02"]
+  },
+  Q: {
+    code: "Q",
+    nom: "Risques Techniques (TRC, BDM, Engins)",
+    branche: "Non-Vie",
+    source_system: "Auto/Irds",
+    cies: [
+      { n_cie: "260", lib_cie: "BDM", lib_branche: "Bris de Machines" },
+      { n_cie: "261", lib_cie: "TRC", lib_branche: "Tous Risques Chantier" },
+      { n_cie: "263", lib_cie: "TRI", lib_branche: "Tous Risques Informatiques" },
+      { n_cie: "267", lib_cie: "TRE", lib_branche: "Tous Risques Montage & Essais" },
+      { n_cie: "268", lib_cie: "EDC", lib_branche: "Engins de Chantier" }
+    ],
+    scenarios: ["SCEN_01", "SCEN_02", "SCEN_04", "SCEN_10"]
+  },
+  R: {
+    code: "R",
+    nom: "Responsabilité Civile & Risques Divers (RC, Décennale, Vol, DDE)",
+    branche: "Non-Vie",
+    source_system: "Auto/Irds",
+    cies: [
+      { n_cie: "220", lib_cie: "VOL", lib_branche: "Risques Divers - Vol" },
+      { n_cie: "230", lib_cie: "RC", lib_branche: "Responsabilité Civile (Professionnelle, Chef de famille, Entreprises)" },
+      { n_cie: "231", lib_cie: "DECENNALE", lib_branche: "RC Décennale Constructeurs" },
+      { n_cie: "240", lib_cie: "DDE", lib_branche: "Dégâts des Eaux" },
+      { n_cie: "250", lib_cie: "BDG", lib_branche: "Bris de Glaces" },
+      { n_cie: "290", lib_cie: "RC_COMPT", lib_branche: "RC Experts-Comptables & Commissaires aux comptes" }
+    ],
+    scenarios: ["SCEN_01", "SCEN_02", "SCEN_04", "SCEN_10"]
+  },
+  T: {
+    code: "T",
+    nom: "Transport & Plaisance (Facultés & Corps)",
+    branche: "Non-Vie",
+    source_system: "Auto/Irds",
+    cies: [
+      { n_cie: "500", lib_cie: "FAC_VOYAGE", lib_branche: "Facultés au Voyage (Maritimes, Aériens, Terrestres)" },
+      { n_cie: "501", lib_cie: "FAC_ABONN", lib_branche: "Facultés à l'Abonnement (Police Flottante)" },
+      { n_cie: "502", lib_cie: "TRANS_FORF", lib_branche: "Transport Forfait Terrestre" },
+      { n_cie: "503", lib_cie: "ASS_PLAISA", lib_branche: "Assurance Plaisance & Corps de navires" }
+    ],
+    scenarios: ["SCEN_01", "SCEN_02", "SCEN_04", "SCEN_10"]
+  },
+  V: {
+    code: "V",
+    nom: "Temporaire Décès Dégressif & Assurance Emprunteur (TD_DEGRESS / Conventions)",
+    branche: "Vie",
+    source_system: "vie encaissement",
+    cies: [
+      {
+        n_cie: "700",
+        lib_cie: "TD_DEGRESS",
+        lib_branches: [
+          "VIE", "FORFAIT", "SANS FRANCHISE", "Franchise 1 à 3 mois", "Franchise 4 mois",
+          "Franchise 5 mois", "Franchise 6 mois", "Franchise 7 mois", "Franchise 8 mois",
+          "Franchise 9 mois", "Franchise 10 mois", "Franchise 11 mois", "Franchise 12 mois",
+          "Franchise 24 mois", "Franchise 36 mois", "Franchise 60 mois", "Franchise 84 mois",
+          "BENEFICIAIRE CLIENTS DE LA BNA", "BENEFICIAIRE EMPLOYE DE LA BNA",
+          "BENEFICIAIRE SONEDE", "BENEFICIAIRE OMMP", "BENEFICIAIRE RNTA",
+          "BENEFICIAIRE Amicale OACA", "BENEFICIAIRE CNRPS", "BENEF MINIST EDUCAT & FORMATION",
+          "BENEFICIAIRE ONAS"
+        ]
+      },
+      {
+        n_cie: "701",
+        lib_cie: "PREVOYANCE",
+        lib_branches: ["FORFAIT"]
+      }
+    ],
+    scenarios: ["SCEN_01", "SCEN_07", "SCEN_10", "SCEN_11", "SCEN_04"]
+  }
+};
+
+/**
+ * Fonction universelle de détection et normalisation de branche
+ */
+export function detectBranchAndSystem(profile = {}) {
+  const cBr = (profile.C_BR || profile.c_br || "").toUpperCase().trim();
+  const nCie = String(profile.N_CIE ?? profile.n_cie ?? "").trim();
+  const libCie = (profile.LIB_CIE || profile.lib_cie || "").toUpperCase().trim();
+  const libBranche = (profile.LIB_BRANCHE || profile.LIB_BRAN || profile.lib_branche || "").toUpperCase().trim();
+
+  // 1. Détection directe par code C_BR
+  if (cBr && BRANCHES_MAPPING[cBr]) {
+    const m = BRANCHES_MAPPING[cBr];
+    return {
+      code: m.code,
+      nom: m.nom,
+      branche: m.branche,
+      source_system: m.source_system,
+      isVie: m.branche === "Vie",
+      isHabitation: m.code === "B",
+      isNonVieIrds: m.branche === "Non-Vie"
+    };
+  }
+
+  // 2. Détection par N_CIE ou LIB_CIE
+  if (["600", "601", "602", "603", "604"].includes(nCie) || libCie.includes("EPARGNE") || (libCie.includes("VIE") && !libCie.includes("VI_SCO"))) {
+    const m = BRANCHES_MAPPING.E;
+    return { code: "E", nom: m.nom, branche: "Vie", source_system: "vie encaissement", isVie: true, isHabitation: false, isNonVieIrds: false };
+  }
+
+  if (["650", "655", "656", "660", "665"].includes(nCie) || libCie.includes("PREVOY") || libCie.includes("COLL_DECES") || libCie.includes("IDR")) {
+    const m = BRANCHES_MAPPING.P;
+    return { code: "P", nom: m.nom, branche: "Vie", source_system: "vie encaissement", isVie: true, isHabitation: false, isNonVieIrds: false };
+  }
+
+  if (["260", "261", "263", "267", "268"].includes(nCie) || libCie.includes("TRC") || libCie.includes("BDM") || libCie.includes("TRI") || libCie.includes("TRE") || libCie.includes("EDC")) {
+    const m = BRANCHES_MAPPING.Q;
+    return { code: "Q", nom: m.nom, branche: "Non-Vie", source_system: "Auto/Irds", isVie: false, isHabitation: false, isNonVieIrds: true };
+  }
+
+  if (["220", "230", "231", "240", "250", "290"].includes(nCie) || libCie.includes("DECENNALE") || libCie.includes("RC") || libCie.includes("VOL") || libCie.includes("DDE") || libCie.includes("BDG")) {
+    const m = BRANCHES_MAPPING.R;
+    return { code: "R", nom: m.nom, branche: "Non-Vie", source_system: "Auto/Irds", isVie: false, isHabitation: false, isNonVieIrds: true };
+  }
+
+  if (["500", "501", "502", "503"].includes(nCie) || libCie.includes("FAC_") || libCie.includes("TRANS_") || libCie.includes("PLAISA") || libCie.includes("VOYAG")) {
+    const m = BRANCHES_MAPPING.T;
+    return { code: "T", nom: m.nom, branche: "Non-Vie", source_system: "Auto/Irds", isVie: false, isHabitation: false, isNonVieIrds: true };
+  }
+
+  if (["700", "701"].includes(nCie) || libCie.includes("TD_DEGRESS") || cBr === "V") {
+    const m = BRANCHES_MAPPING.V;
+    return { code: "V", nom: m.nom, branche: "Vie", source_system: "vie encaissement", isVie: true, isHabitation: false, isNonVieIrds: false };
+  }
+
+  if (["271", "272", "273", "274", "276", "277"].includes(nCie) || libCie.includes("BEYTI") || libCie.includes("HABIT")) {
+    const m = BRANCHES_MAPPING.B;
+    return { code: "B", nom: m.nom, branche: "Non-Vie", source_system: "auto", isVie: false, isHabitation: true, isNonVieIrds: true };
+  }
+
+  if (nCie === "300" || libCie.includes("INC")) {
+    const m = BRANCHES_MAPPING.I;
+    return { code: "I", nom: m.nom, branche: "Non-Vie", source_system: "Auto/Irds", isVie: false, isHabitation: false, isNonVieIrds: true };
+  }
+
+  if (nCie === "280" || libCie.includes("MULTI_PROF") || libCie.includes("MAPL")) {
+    const m = BRANCHES_MAPPING.M;
+    return { code: "M", nom: m.nom, branche: "Non-Vie", source_system: "Auto/Irds", isVie: false, isHabitation: false, isNonVieIrds: true };
+  }
+
+  if (["205", "206", "207", "208", "209", "210", "211", "212", "213"].includes(nCie) ||
+      libCie.includes("ACCIDENT") || libCie.includes("SAFER") || libCie.includes("PRIV_TRAJ") || libCie.includes("INDIV_ACC") || libCie.includes("PRIV_PROF") || libCie.includes("VI_SCO")) {
+    const m = BRANCHES_MAPPING.C;
+    return { code: "C", nom: m.nom, branche: "Non-Vie", source_system: "Auto/Irds", isVie: false, isHabitation: false, isNonVieIrds: true };
+  }
+
+  if (nCie === "350" || libCie.includes("AGRICOLE")) {
+    const m = BRANCHES_MAPPING.N;
+    return { code: "N", nom: m.nom, branche: "Non-Vie", source_system: "Auto/Irds", isVie: false, isHabitation: false, isNonVieIrds: true };
+  }
+
+  if (["400", "401"].includes(nCie) || libCie.includes("MALA") || libCie.includes("SANTE")) {
+    const m = BRANCHES_MAPPING.G;
+    return { code: "G", nom: m.nom, branche: "Non-Vie", source_system: "Auto/Irds", isVie: false, isHabitation: false, isNonVieIrds: true };
+  }
+
+  if (["10", "17"].includes(nCie) || libCie.includes("MONO") || libCie.includes("FLOTTE") || libCie.includes("AUTO")) {
+    const m = BRANCHES_MAPPING.A;
+    return { code: "A", nom: m.nom, branche: "Non-Vie", source_system: "Auto/Irds", isVie: false, isHabitation: false, isNonVieIrds: true };
+  }
+
+  // Par défaut Non-Vie / Auto/Irds
+  return { code: "A", nom: "Non-Vie / Auto/IRDS", branche: "Non-Vie", source_system: "Auto/Irds", isVie: false, isHabitation: false, isNonVieIrds: true };
+}
+
+/**
  * Moteur principal : évalue un profil ou une transaction contre les 13 SCÉNARIOS RÉGLEMENTAIRES
  */
 export function checkAlert(profile = {}) {
@@ -180,12 +488,28 @@ export function checkAlert(profile = {}) {
   const isRisqueEleve = profile.niveauRisque === "RE" || profile.riskValue === "Risque Elevé" || !!profile.niveauRisqueElevé;
   const risqueLabel = isRisqueEleve ? "RE" : "RM/RF";
 
-  // Normalisation des variables d'entrée
-  const sourceSys = (profile.source_system || "").toLowerCase();
+  // Normalisation des colonnes du système de gestion (C_BR, N_CIE, LIB_CIE, N_BRA, LIB_BRANCHE)
+  const cBr = (profile.C_BR || profile.c_br || "").toUpperCase().trim();
+  const nCie = String(profile.N_CIE ?? profile.n_cie ?? "").trim();
+  const libCie = (profile.LIB_CIE || profile.lib_cie || "").toUpperCase().trim();
+  const libBranche = (profile.LIB_BRANCHE || profile.LIB_BRAN || profile.lib_branche || "").toUpperCase().trim();
+
+  // Détection automatique de la branche et du système source (A, B, C, I, M, N, G, E)
+  const branchInfo = detectBranchAndSystem(profile);
+  const isAuto = branchInfo.code === "A";
+  const isHabitationBayti = branchInfo.isHabitation;
+  const isVieEpargne = branchInfo.isVie;
+  const isNonVieIrds = branchInfo.isNonVieIrds;
+
+  let sourceSys = (profile.source_system || "").toLowerCase();
+  if (!sourceSys) {
+    sourceSys = branchInfo.source_system.toLowerCase();
+  }
+
   const modifType = (profile.modification_type || profile.typeOperation || "").toLowerCase();
 
-  // Capital Non-Vie (Auto/IRDS)
-  const capNonVie = Number(profile.capitalAssure || profile.MAX_CAP || profile.max_cap || 0);
+  // Capital Non-Vie (Auto/IRDS ou Multirisque Habitation)
+  const capNonVie = Number(profile.capitalAssure || profile.MAX_CAP || profile.max_cap || profile.VAL_VENTE || 0);
   // Prime Non-Vie
   const primeNonVie = Number(profile.prime || profile.PRIME_ENCAIS || 0);
   // Rachat Vie
@@ -193,12 +517,12 @@ export function checkAlert(profile = {}) {
   // Augmentation ratio
   const ratioAugment = Number(profile.augmentationCapital || (profile.capital && profile.Capital_previous ? profile.capital / profile.Capital_previous : 0));
   // Capital Vie (fin de contrat)
-  const capVieFin = Number(profile.capitalAssureVie || profile.Capital_fin_contrat || profile.capitalAssure || 0);
+  const capVieFin = Number(profile.capitalAssureVie || profile.Capital_fin_contrat || (isVieEpargne ? capNonVie : 0));
   // Primes cumulées Vie
-  const primesVieTotales = Number(profile.primesVieTotales || profile["montant total des primes versees"] || profile.prime || 0);
+  const primesVieTotales = Number(profile.primesVieTotales || profile["montant total des primes versees"] || (isVieEpargne ? primeNonVie : 0));
   // Espèces
-  const especes = Number(profile.paiementEspeces || profile.amount || profile.montant || 0);
-  const modePaiement = String(profile.MODE_PAIEMENT || profile.M || profile.modePaiement || "").toUpperCase();
+  const especes = Number(profile.paiementEspeces || profile.amount || profile.montant || (String(profile.M).trim() === "1" ? primeNonVie : 0));
+  const modePaiement = String(profile.MODE_PAIEMENT || profile.M || profile.modePaiement || "").toUpperCase().trim();
   const isModeEspeces = modePaiement === "ESPECE" || modePaiement === "ESPEC" || modePaiement === "1" || !!profile.isEspeces;
 
   const indicators = [];
@@ -208,7 +532,7 @@ export function checkAlert(profile = {}) {
   // ─────────────────────────────────────────────────────────────────────────────
   {
     const scen = AML_SCENARIOS[0];
-    const isTrigger = sourceSys.includes("auto") || sourceSys.includes("irds") || profile.typeOperation === "souscription" || !sourceSys;
+    const isTrigger = sourceSys.includes("auto") || sourceSys.includes("irds") || isNonVieIrds || profile.typeOperation === "souscription" || !sourceSys;
     const rule = scen.sousRegles.find(r => r.groupe === groupeKey && r.risqueEleve === isRisqueEleve) || scen.sousRegles[2];
     const isAlert = isTrigger && (capNonVie > rule.seuilDT || capNonVie > rule.seuilMillimes);
     const decisions = isAlert ? generateDecisionsForScenario(scen, { valeur: capNonVie, valeurFmt: `${capNonVie.toLocaleString('fr-TN')} DT`, rule }, profile) : null;
@@ -233,7 +557,7 @@ export function checkAlert(profile = {}) {
   // ─────────────────────────────────────────────────────────────────────────────
   {
     const scen = AML_SCENARIOS[1];
-    const isTrigger = sourceSys.includes("auto") || sourceSys.includes("irds") || profile.typeOperation === "souscription" || profile.typeOperation === "prime" || !sourceSys;
+    const isTrigger = sourceSys.includes("auto") || sourceSys.includes("irds") || isNonVieIrds || profile.typeOperation === "souscription" || profile.typeOperation === "prime" || !sourceSys;
     const rule = scen.sousRegles.find(r => r.groupe === groupeKey && r.risqueEleve === isRisqueEleve) || scen.sousRegles[2];
     const isAlert = isTrigger && (primeNonVie > rule.seuilDT || primeNonVie > rule.seuilMillimes);
     const decisions = isAlert ? generateDecisionsForScenario(scen, { valeur: primeNonVie, valeurFmt: `${primeNonVie.toLocaleString('fr-TN')} DT`, rule }, profile) : null;
@@ -392,7 +716,8 @@ export function checkAlert(profile = {}) {
   {
     const scen = AML_SCENARIOS[7];
     let rule = scen.sousRegles.find(r => r.groupe === groupeKey) || scen.sousRegles[0];
-    const isAlert = !!profile.baytIIcoherent || (capNonVie > rule.seuilDT || capNonVie > rule.seuilMillimes);
+    const isHabitation = isHabitationBayti || cBr === "B" || !!profile.baytIIcoherent;
+    const isAlert = isHabitation && (!!profile.baytIIcoherent || (capNonVie > rule.seuilDT || capNonVie > rule.seuilMillimes));
     const decisions = isAlert ? generateDecisionsForScenario(scen, { valeurFmt: `${capNonVie.toLocaleString('fr-TN')} DT`, rule }, profile) : null;
 
     indicators.push({

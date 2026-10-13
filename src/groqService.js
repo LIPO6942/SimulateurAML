@@ -1,4 +1,4 @@
-import { checkAlert, AML_SCENARIOS, getGroupe } from './engine.js';
+import { checkAlert, AML_SCENARIOS, getGroupe, detectBranchAndSystem } from './engine.js';
 
 // ─── GROQ AI SERVICE — Smart-AML Decision Support ──────────────────────────
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
@@ -560,7 +560,10 @@ export function evaluateTransactionLocally(rawFields = {}) {
     const effQuit = rawFields.EFF_QUIT || "13/01/2026";
     const statutContrat = (rawFields.STATUT_CON || "").toLowerCase();
     const cStatut = rawFields.CSTATUT || "2";
-    const sourceSystem = rawFields.source_system || "Auto/Irds";
+
+    // Détection automatique de la branche et du système source (A, B, C, I, M, N, G, E)
+    const branchDetected = detectBranchAndSystem(rawFields);
+    const sourceSystem = rawFields.source_system || branchDetected.source_system || "Auto/Irds";
 
     // Traitement du montant (millimes vs Dinars)
     const montantDinars = parseMontantTnd(rawFields.PRIME_ENCAIS ?? rawFields.montant, 70.416);
@@ -590,6 +593,12 @@ export function evaluateTransactionLocally(rawFields = {}) {
         prenom: "",
         activite: prof,
         LIB_PROF: prof,
+        C_BR: rawFields.C_BR || rawFields.c_br || branchDetected.code,
+        N_CIE: rawFields.N_CIE || rawFields.n_cie,
+        LIB_CIE: rawFields.LIB_CIE || rawFields.lib_cie,
+        N_BRA: rawFields.N_BRA || rawFields.n_bra,
+        LIB_BRANCHE: rawFields.LIB_BRANCHE || rawFields.LIB_BRAN || rawFields.lib_branche,
+        branche: branchDetected.branche,
         source_system: sourceSystem,
         typeOperation: "souscription",
         capitalAssure: parseMontantTnd(rawFields.MAX_CAP || rawFields.VAL_VENTE, 0),

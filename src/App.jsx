@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { db } from './firebase.js';
 import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, setDoc, writeBatch } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { getGroupe, SEUILS, checkAlert, AML_SCENARIOS } from './engine.js';
+import { getGroupe, SEUILS, checkAlert, AML_SCENARIOS, BRANCHES_MAPPING, detectBranchAndSystem } from './engine.js';
 import { CLIENT_VIDE } from './data.js';
 import './styles.css';
 import { debounce } from 'lodash';
@@ -437,23 +437,70 @@ const Sidebar = ({ clients, selId, selectClient, addClient, deleteClient, getDot
 
       const imported = data.map(row => {
         const obj = { ...CLIENT_VIDE };
+        // Mémorisation de l'ensemble des données d'origine
+        Object.assign(obj, row);
+
         Object.keys(row).forEach(key => {
           const k = key.trim().toLowerCase();
           const val = row[key];
-          if (k === 'nom') obj.nom = val;
+
+          // 1. Branche & Système (C_BR, N_CIE, LIB_CIE, N_BRA, LIB_BRANCHE)
+          if (k === 'c_br') obj.C_BR = String(val).toUpperCase().trim();
+          if (k === 'n_cie') obj.N_CIE = String(val).trim();
+          if (k === 'lib_cie') obj.LIB_CIE = String(val).trim();
+          if (k === 'n_bra') obj.N_BRA = String(val).trim();
+          if (k === 'lib_branche' || k === 'lib_bran') obj.LIB_BRANCHE = String(val).trim();
+
+          // 2. Sociétaire & KYC
+          if (k === 'nom' || k === 'nom_adh') obj.nom = val;
           if (k === 'prenom' || k === 'prénom') obj.prenom = val;
+          if (k === 'n_client') obj.id = String(val);
+          if (k === 'cin') obj.cin = String(val);
           if (k === 'pays') obj.pays = val;
-          if (k === 'activite') obj.activite = val;
-          if (k === 'risque') obj.niveauRisque = val;
-          if (k === 'capital') obj.capitalAssure = Number(val);
-          if (k === 'prime') obj.prime = Number(val);
+          if (k === 'activite' || k === 'lib_prof') obj.activite = val;
+          if (k === 'c_prof') obj.C_PROF = val;
+          if (k === 'risque' || k === 'riskvalue') obj.niveauRisque = String(val).includes('Elev') ? 'RE' : 'RM/RF';
+
+          // 3. Montants (Gestion automatique des montants)
+          if (k === 'capital' || k === 'max_cap') obj.capitalAssure = Number(val);
+          if (k === 'prime' || k === 'prime_encais') obj.prime = Number(val);
+          if (k === 'val_vente' || k === 'val_neuf') obj.valeurBien = Number(val);
           if (k === 'rachat') obj.valeurRachat = Number(val);
           if (k === 'augmentation') obj.augmentationCapital = Number(val);
-          if (k === 'especes') obj.paiementEspeces = Number(val);
-          if (k === 'datesouscription') obj.dateSouscription = val;
-          if (k === 'dateoperation') obj.dateOperation = val;
+          if (k === 'especes' || k === 'amount') obj.paiementEspeces = Number(val);
+
+          // 4. Mode de paiement
+          if (k === 'm') {
+            obj.M = String(val);
+            if (String(val).trim() === '1') {
+              obj.isEspeces = true;
+              obj.paiementEspeces = obj.prime || obj.paiementEspeces;
+            }
+          }
+          if (k === 'mode_paiement') {
+            obj.MODE_PAIEMENT = val;
+            if (String(val).toUpperCase().includes('ESPEC')) obj.isEspeces = true;
+          }
+
+          // 5. Dates & Contrat
+          if (k === 'n_police') obj.police = val;
+          if (k === 'n_quittance') obj.quittance = val;
+          if (k === 'agence') obj.agence = val;
+          if (k === 'datesouscription' || k === 'eff_pol') obj.dateSouscription = val;
+          if (k === 'dateoperation' || k === 'eff_quit') obj.dateOperation = val;
           if (k === 'nbcontrats') obj.nbContrats3Ans = Number(val);
         });
+
+        // Détection et normalisation automatique de la branche via le référentiel complet (A, B, C, I, M, N, G, E)
+        const branchDetected = detectBranchAndSystem(obj);
+        obj.C_BR = obj.C_BR || branchDetected.code;
+        obj.branche = obj.branche || branchDetected.branche;
+        obj.source_system = obj.source_system || branchDetected.source_system;
+        obj.brancheNom = branchDetected.nom;
+        if (branchDetected.code === 'B' && obj.baytIIcoherent === undefined) {
+          obj.baytIIcoherent = false;
+        }
+
         return obj;
       });
       onImport(imported);
@@ -723,6 +770,151 @@ const SettingsPanel = () => {
     alert("Seuils réinitialisés à la valeur par défaut !");
   };
 
+  const exportMappingToExcel = () => {
+    try {
+      const rows = [];
+      Object.values(BRANCHES_MAPPING).forEach(b => {
+        b.cies.forEach(c => {
+          const branchesList = c.lib_branches ? c.lib_branches.join(", ") : (c.lib_branche || "Standard");
+          rows.push({
+            "Code Branche (C_BR)": b.code,
+            "Branche d'assurance": b.nom,
+            "Catégorie": b.branche,
+            "Système Source RegTools": b.source_system,
+            "Code Compagnie (N_CIE)": c.n_cie,
+            "Libellé Compagnie (LIB_CIE)": c.lib_cie,
+            "Produits détaillés (LIB_BRANCHE)": branchesList,
+            "Scénarios AML Déclenchés": b.scenarios.join(", ")
+          });
+        });
+      });
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws['!cols'] = [
+        { wch: 10 },
+        { wch: 36 },
+        { wch: 12 },
+        { wch: 22 },
+        { wch: 12 },
+        { wch: 18 },
+        { wch: 60 },
+        { wch: 35 },
+      ];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Mapping Produits & AML");
+      XLSX.writeFile(wb, "Referentiel_Mapping_Branches_Produits_AML.xlsx");
+    } catch (err) {
+      console.error("Erreur export Excel:", err);
+      alert("Erreur lors de l'exportation vers Excel.");
+    }
+  };
+
+  const exportMappingToPDF = () => {
+    try {
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        alert("Veuillez autoriser les fenêtres pop-up de votre navigateur pour générer le PDF.");
+        return;
+      }
+
+      const rowsHtml = Object.values(BRANCHES_MAPPING).map(b => {
+        const ciesHtml = b.cies.map(c => `<div><strong>${c.n_cie}</strong> — ${c.lib_cie}</div>`).join('');
+        const prodsHtml = b.cies.flatMap(c => c.lib_branches || [c.lib_branche]).filter(Boolean).join(', ');
+        const scenHtml = b.scenarios.map(s => `<span style="display:inline-block;background:#fee2e2;color:#991b1b;padding:1px 5px;border-radius:3px;font-weight:700;font-size:9px;margin:1px;">${s}</span>`).join(' ');
+        const catBadge = b.branche === 'Vie'
+          ? '<span style="background:#fef3c7;color:#b45309;padding:2px 6px;border-radius:4px;font-weight:700;font-size:10px;">Vie</span>'
+          : '<span style="background:#dcfce7;color:#15803d;padding:2px 6px;border-radius:4px;font-weight:700;font-size:10px;">Non-Vie</span>';
+
+        return `
+          <tr>
+            <td style="text-align:center;font-weight:bold;font-size:13px;color:#1d4ed8;">${b.code}</td>
+            <td><strong>${b.nom}</strong></td>
+            <td style="text-align:center;">${catBadge}</td>
+            <td><code>${b.source_system}</code></td>
+            <td style="font-size:10px;">${ciesHtml}</td>
+            <td style="color:#334155;font-size:10px;">${prodsHtml}</td>
+            <td>${scenHtml}</td>
+          </tr>
+        `;
+      }).join('');
+
+      const html = \`<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Référentiel Officiel du Mapping des Produits & Branches - AML</title>
+  <style>
+    @page { size: landscape; margin: 10mm; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 0; padding: 15px; color: #0f172a; font-size: 11px; }
+    .hdr { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #2563eb; padding-bottom: 10px; margin-bottom: 12px; }
+    .hdr-t { font-size: 16px; font-weight: 800; color: #1e3a8a; }
+    .hdr-s { font-size: 11px; color: #64748b; margin-top: 2px; }
+    .badge-d { background: #eff6ff; color: #1d4ed8; padding: 4px 8px; border-radius: 4px; font-weight: 700; font-size: 10px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 10px; }
+    th, td { border: 1px solid #cbd5e1; padding: 5px 7px; text-align: left; vertical-align: top; }
+    th { background: #f1f5f9; color: #0f172a; font-weight: 700; text-transform: uppercase; font-size: 9px; }
+    tr:nth-child(even) { background: #f8fafc; }
+    .ftr { margin-top: 15px; font-size: 9px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 6px; display: flex; justify-content: space-between; }
+    @media print {
+      body { padding: 0; }
+      .no-print { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="hdr">
+    <div>
+      <div class="hdr-t">RÉFÉRENTIEL OFFICIEL DU MAPPING DES PRODUITS & BRANCHES D'ASSURANCE</div>
+      <div class="hdr-s">Dispositif de Surveillance LCB-FT / RegTools & Matrice des 13 Scénarios Réglementaires</div>
+    </div>
+    <div style="text-align:right;">
+      <span class="badge-d">Date d'édition : \${new Date().toLocaleDateString('fr-TN')}</span>
+      <div style="font-size:9px;color:#64748b;margin-top:4px;">13 Branches & Sous-produits intégrés</div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:40px;text-align:center;">C_BR</th>
+        <th style="width:160px;">Branche d'assurance</th>
+        <th style="width:65px;text-align:center;">Catégorie</th>
+        <th style="width:110px;">Système Source</th>
+        <th style="width:140px;">Codes N_CIE & LIB_CIE</th>
+        <th>Produits détaillés (LIB_BRANCHE)</th>
+        <th style="width:140px;">Scénarios AML</th>
+      </tr>
+    </thead>
+    <tbody>
+      \${rowsHtml}
+    </tbody>
+  </table>
+
+  <div class="ftr">
+    <div>MAE Assurances — Direction de la Conformité & Contrôle Permanent LCB-FT (Loi n°2015-26 & Règlement CGA 2019-02)</div>
+    <div>Export Automatisé Simulateur AML</div>
+  </div>
+
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        window.print();
+      }, 300);
+    };
+  </script>
+</body>
+</html>\`;
+
+      printWindow.document.open();
+      printWindow.document.write(html);
+      printWindow.document.close();
+    } catch (err) {
+      console.error("Erreur export PDF:", err);
+      alert("Erreur lors de la génération du document PDF.");
+    }
+  };
+
   return (
     <div>
       <div className="panel-t">Référentiel & Configuration des 13 Scénarios AML</div>
@@ -731,13 +923,20 @@ const SettingsPanel = () => {
       </p>
 
       {/* Onglets de configuration */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
         <button
           type="button"
           className={`input-mode-btn ${activeTab === 'referentiel' ? 'active' : ''}`}
           onClick={() => setActiveTab('referentiel')}
         >
           📚 Référentiel des 13 Scénarios (Fichier scenariosConfig.js)
+        </button>
+        <button
+          type="button"
+          className={`input-mode-btn ${activeTab === 'mapping' ? 'active' : ''}`}
+          onClick={() => setActiveTab('mapping')}
+        >
+          🏛️ Dictionnaire de Mapping des Branches (C_BR, N_CIE, N_BRA)
         </button>
         <button
           type="button"
@@ -788,6 +987,118 @@ const SettingsPanel = () => {
                 )}
               </div>
             ))}
+          </div>
+        </div>
+      ) : activeTab === 'mapping' ? (
+        <div className="card anim-up" style={{ padding: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+            <div>
+              <h3 style={{ margin: '0 0 6px 0', fontSize: '1.15rem' }}>
+                🏛️ Dictionnaire de Mapping Complet : Branches d'Assurance & Système de Gestion
+              </h3>
+              <p style={{ margin: 0, fontSize: '0.88rem', color: 'var(--text-secondary)' }}>
+                Correspondance entre les colonnes de votre base de données d'assurance (<code>C_BR</code>, <code>N_CIE</code>, <code>LIB_CIE</code>, <code>N_BRA</code>, <code>LIB_BRANCHE</code>) et les moteurs d'alerte AML (13 Scénarios réglementaires).
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn-primary"
+                style={{ background: '#107c41', display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', fontSize: '0.88rem', cursor: 'pointer', borderRadius: 6, color: '#fff', border: 'none', fontWeight: 600 }}
+                onClick={exportMappingToExcel}
+                title="Exporter l'ensemble du référentiel sous format Excel (.xlsx)"
+              >
+                📗 Exporter vers Excel (.xlsx)
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                style={{ background: '#dc2626', display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', fontSize: '0.88rem', cursor: 'pointer', borderRadius: 6, color: '#fff', border: 'none', fontWeight: 600 }}
+                onClick={exportMappingToPDF}
+                title="Générer un rapport PDF prêt à imprimer ou enregistrer en PDF"
+              >
+                📄 Exporter vers PDF (.pdf)
+              </button>
+            </div>
+          </div>
+
+          <div style={{ overflowX: 'auto' }}>
+            <table className="bulk-table" style={{ width: '100%', fontSize: '0.85rem' }}>
+              <thead>
+                <tr>
+                  <th style={{ width: 60, textAlign: 'center' }}>C_BR</th>
+                  <th>Branche d'assurance</th>
+                  <th>Catégorie</th>
+                  <th>Système source RegTools</th>
+                  <th>Codes N_CIE & LIB_CIE</th>
+                  <th>Produits & LIB_BRANCHE</th>
+                  <th>Scénarios AML Déclenchés</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.values(BRANCHES_MAPPING).map(b => (
+                  <tr key={b.code}>
+                    <td style={{ textAlign: 'center', fontWeight: 'bold' }}>
+                      <span className="chip" style={{ background: 'var(--text-accent)', color: '#fff', fontSize: '0.9rem' }}>
+                        {b.code}
+                      </span>
+                    </td>
+                    <td>
+                      <strong>{b.nom}</strong>
+                    </td>
+                    <td>
+                      <span className={`chip ${b.branche === 'Vie' ? 'c-yel' : 'c-grn'}`}>
+                        {b.branche}
+                      </span>
+                    </td>
+                    <td>
+                      <code>{b.source_system}</code>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {b.cies.map((c, i) => (
+                          <span key={i} style={{ fontSize: '0.8rem' }}>
+                            <strong>{c.n_cie}</strong> — {c.lib_cie}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', maxHeight: 80, overflowY: 'auto' }}>
+                        {b.cies.flatMap(c => c.lib_branches || [c.lib_branche]).filter(Boolean).join(', ')}
+                      </div>
+                    </td>
+                    <td>
+                      <div className="scenario-chips">
+                        {b.scenarios.map(s => (
+                          <span key={s} className="chip-id grav-haute" style={{ fontSize: '0.75rem' }}>
+                            {s}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ marginTop: 20, background: 'var(--bg-accent)', padding: 14, borderRadius: 8, fontSize: '0.84rem' }}>
+            <strong>💡 Principes d'intégration & Règles de gestion AML (13 Branches) :</strong>
+            <ul style={{ margin: '8px 0 0 0', paddingLeft: 20 }}>
+              <li><strong>Branches Non-Vie / IRDS (<code>A</code>, <code>I</code>, <code>M</code>, <code>C</code>, <code>N</code>, <code>Q</code>, <code>R</code>, <code>T</code>, <code>G</code>) :</strong> Rattachées au système opérationnel <code>Auto/Irds</code>. Évaluées automatiquement sur les <strong>Scénarios 01</strong> (Capitaux assurés), <strong>02</strong> (Primes de souscription) et <strong>10</strong> (Paiements en espèces &gt; 1 000 DT / 3 000 DT / 5 000 DT).</li>
+              <li><strong>Branche Temporaire Décès Dégressif & Emprunteur (<code>V</code> - Codes 700 TD_DEGRESS, 701 PREVOYANCE) :</strong> Assurance Vie Emprunteur (crédits BNA, conventions SONEDE, OMMP, RNTA, OACA, CNRPS, ONAS, Éducation). Capitaux décès dégressifs adossés à des financements. Surveillance des bénéficiaires délégués (Scénario 07) et règlements espèces (Scénario 10).</li>
+              <li><strong>Branche Risques Techniques (<code>Q</code> - Codes 260 BDM, 261 TRC, 263 TRI, 267 TRE, 268 EDC) :</strong> Chantiers BTP, engins et bris de machines. Capitaux garantis colossaux (souvent &gt; 10M DT). Surveillance des capitaux assurés et des grands comptes.</li>
+              <li><strong>Branche Responsabilité Civile & Risques Divers (<code>R</code> - Codes 220 VOL, 230 RC, 231 DECENNALE, 240 DDE, 250 BDG, 290 RC_COMPT) :</strong> RC Professionnelles (avocats, experts-comptables, médecins, architectes) et RC Décennale. Évaluée sur les capitaux et primes.</li>
+              <li><strong>Branche Transport & Plaisance (<code>T</code> - Codes 500-502 FAC_VOYAGE / ABONNEMENT, 503 PLAISANCE) :</strong> Cargaisons maritimes, aériennes, terrestres et corps de navires. Zone hautement sensible aux embargos internationaux et pavillons à risque (Scénario 04 GAFI).</li>
+              <li><strong>Branche Prévoyance & Décès (<code>P</code> - Codes 650 PREVOYANC, 655 MIXTE, 656 PREVOYA_ES, 660 Coll_Deces, 665 IDR) :</strong> Branche Vie / Prévoyance. Surveillance particulière des changements de clause bénéficiaire (<strong>Scénario 07</strong>) et du paiement en espèces (<strong>Scénario 10</strong>, seuil 5 000 DT).</li>
+              <li><strong>Branche Incendie (<code>I</code> - Code 300 INC) :</strong> Risques Simples et Risques Industriels / Pertes d'exploitation. Soumise aux seuils Non-Vie très élevés pour personnes morales et industriels.</li>
+              <li><strong>Branche Multirisques Professionnelles (<code>M</code> - Code 280 MULTI_PROF / MAPL) :</strong> Commerçants, artisans et professions libérales. Évaluée avec les seuils de référence du <strong>Groupe 4</strong>.</li>
+              <li><strong>Branche Corporels & Voyage (<code>C</code> - Codes 205-213) :</strong> Individuelle Accident (208, 210) et Assistance Voyage SAFER (211-213). Surveillance des capitaux décès/invalidité et des souscriptions voyage cash.</li>
+              <li><strong>Branche Agricole (<code>N</code> - Code 350 Agricole) :</strong> Forfait agricole, serres, cheptel et récoltes.</li>
+              <li><strong>Branche Habitation (<code>B</code> - Codes 271-277 BEYTI) :</strong> Système source <code>auto</code>, déclenche spécifiquement le <strong>Scénario 08</strong> (Incohérence du capital multirisque habitation) en plus de S01, S02, S10.</li>
+              <li><strong>Branche Vie & Épargne (<code>E</code> - Codes 600-604 EPARGNE) :</strong> Système source <code>vie encaissement / vie decaissement</code>. Déclenche exclusivement les scénarios d'épargne (<strong>S03, S05, S06, S07, S09, S11, S12, S13</strong>) et les seuils d'espèces Vie (5 000 DT).</li>
+            </ul>
           </div>
         </div>
       ) : (
@@ -1175,18 +1486,35 @@ const AlertSimPanel = ({ activeClient, selId, updateField, addClient, lancerHist
         <div className="sim-form-col">
           <div className="sec">Branche & Système source</div>
           <div className="sim-form-group">
-            <Field label="Branche d'assurance" as="select" value={currentData.branche || "Non-Vie"} onChange={e => {
-              const b = e.target.value;
-              set("branche", b);
-              set("source_system", b === "Vie" ? "vie encaissement" : "Auto/Irds");
+            <Field label="Branche d'assurance (C_BR)" as="select" value={currentData.C_BR || "A"} onChange={e => {
+              const code = e.target.value;
+              const mapped = BRANCHES_MAPPING[code] || BRANCHES_MAPPING.A;
+              set("C_BR", code);
+              set("branche", mapped.branche);
+              set("source_system", mapped.source_system);
+              set("LIB_CIE", mapped.cies[0]?.lib_cie || "");
+              set("N_CIE", mapped.cies[0]?.n_cie || "");
+              if (code === "B") set("baytIIcoherent", false);
             }}>
-              <option value="Non-Vie">Non-Vie (Auto / IRDS / Multirisque)</option>
-              <option value="Vie">Vie & Capitalisation</option>
+              <option value="A">A - Automobile (MONOBRANCHE / FLOTTE)</option>
+              <option value="B">B - Habitation (BEYTI 271-277)</option>
+              <option value="I">I - Incendie & Pertes d'exploitation (INC 300)</option>
+              <option value="M">M - Multirisques Professionnelles (MAPL 280)</option>
+              <option value="C">C - Corporel & Assistance Voyage (ACCIDENT 208, SAFER 211-213, PRIV_PROF 210)</option>
+              <option value="N">N - Risques Agricoles (Agricole 350)</option>
+              <option value="Q">Q - Risques Techniques (TRC 261, BDM 260, EDC 268)</option>
+              <option value="R">R - Responsabilité Civile & Risques Divers (RC 230, DECENNALE 231, VOL 220)</option>
+              <option value="T">T - Transport & Plaisance (FAC_VOYAGE 500, FAC_ABONN 501, PLAISANCE 503)</option>
+              <option value="P">P - Prévoyance & Décès (PREVOYANC 650, MIXTE 655, IDR 665)</option>
+              <option value="V">V - Assurance Emprunteur & Temporaire Décès Dégressif (TD_DEGRESS 700 / PREV 701)</option>
+              <option value="G">G - Santé & Maladie (MALA_INDIV 400, MALA_GRPE 401)</option>
+              <option value="E">E - Épargne & Vie (EPARGNE 600-604)</option>
             </Field>
             <Field label="Système source (source_system)" as="select" value={currentData.source_system || "Auto/Irds"} onChange={e => set("source_system", e.target.value)}>
-              <option value="Auto/Irds">Auto/Irds (Non-Vie)</option>
-              <option value="vie encaissement">vie encaissement (Souscriptions & Cotisations Vie)</option>
-              <option value="vie decaissement">vie decaissement (Rachats & Avances Vie)</option>
+              <option value="Auto/Irds">Auto/Irds (Non-Vie : Auto, Incendie, Multirisque Pro, Corporel, Agricole, Risques Techniques, RC, Transport)</option>
+              <option value="auto">auto (Multirisque Habitation BEYTI)</option>
+              <option value="vie encaissement">vie encaissement (Souscriptions Vie / Prévoyance / Épargne)</option>
+              <option value="vie decaissement">vie decaissement (Rachats, Avances & Décaissements Vie)</option>
               <option value="vie">vie (Général)</option>
             </Field>
           </div>
