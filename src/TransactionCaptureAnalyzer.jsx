@@ -4,44 +4,17 @@ import {
   evaluateTransactionDataWithGroq,
   evaluateTransactionLocally,
   getGroqApiKey,
-  setGroqApiKey
+  setGroqApiKey,
+  parseTableText,
+  formatFieldsToText,
+  EXEMPLE_DOCTEUR,
+  EXEMPLE_TAXI
 } from './groqService.js';
 
-// Données d'exemple anonymisées correspondant au cas d'usage réel
-const EXEMPLE_CAPTURE_REELLE = {
-  N_CLIENT: "870255",
-  CT: "12",
-  LIB_TIT: "Docteur",
-  S: "C",
-  DT_NAISS: "01/03/1985",
-  NAT_P: "1",
-  CIN: "08123456",
-  V_CIN: "TUNIS",
-  DT_CIN: "08/08/2007",
-  AGENCE: "106",
-  N_POLICE: "101322613",
-  N_CIE: "10",
-  EFF_POL: "20/10/2021",
-  FIN_POL: "19/10/2026",
-  ORDRE_O: "1",
-  IMMAT: "15322577",
-  VAL_VENTE: "120000000",
-  VAL_NEUF: "120000000",
-  EFF_QUIT: "20/10/2025",
-  FIN_QUIT: "19/10/2026",
-  N_QUITTANCE: "460914031",
-  M: "1",
-  PRIME_ENCAIS: "5579024",
-  MAX_CAP: "120000000",
-  MIN_CAP: "0",
-  C_PROF: "36",
-  LIB_PROF: "MEDECIN (CABINET)",
-  NOM_ADH: "BEN SALAH SAMI",
-  CSTATUT: "0",
-  source_system: "Auto/Inds"
-};
-
 export default function TransactionCaptureAnalyzer() {
+  const [inputMode, setInputMode] = useState("text"); // "text" ou "image"
+  const [extractedFields, setExtractedFields] = useState(EXEMPLE_TAXI);
+  const [pastedText, setPastedText] = useState(() => formatFieldsToText(EXEMPLE_TAXI));
   const [imagePreview, setImagePreview] = useState(null);
   const [imageBase64, setImageBase64] = useState(null);
   const [pasteNotice, setPasteNotice] = useState(null);
@@ -50,17 +23,42 @@ export default function TransactionCaptureAnalyzer() {
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState("");
   const [error, setError] = useState(null);
-  const [extractedFields, setExtractedFields] = useState(EXEMPLE_CAPTURE_REELLE);
   const [showFieldsEditor, setShowFieldsEditor] = useState(false);
   const [result, setResult] = useState(null);
   const [copiedField, setCopiedField] = useState(null);
   const dropZoneRef = useRef(null);
+  const textAreaRef = useRef(null);
 
   // Initialisation automatique avec l'exemple pour avoir un résultat dès le départ
   useEffect(() => {
-    const defaultEval = evaluateTransactionLocally(EXEMPLE_CAPTURE_REELLE);
+    const defaultEval = evaluateTransactionLocally(EXEMPLE_TAXI);
     setResult(defaultEval);
   }, []);
+
+  // Application de nouvelles données extraites (texte ou image)
+  const applyExtractedFields = useCallback((fields, noticeMsg = null) => {
+    setExtractedFields(fields);
+    setPastedText(formatFieldsToText(fields));
+    const evalRes = evaluateTransactionLocally(fields);
+    setResult(evalRes);
+    if (noticeMsg) {
+      setPasteNotice(noticeMsg);
+      setTimeout(() => setPasteNotice(null), 3500);
+    }
+  }, []);
+
+  // Détection et parsing du texte (tableau TSV copié, etc.)
+  const handlePastedTextContent = useCallback((text) => {
+    if (!text || typeof text !== 'string') return false;
+    const parsed = parseTableText(text);
+    if (parsed && Object.keys(parsed).length >= 2) {
+      const count = Object.keys(parsed).length;
+      applyExtractedFields(parsed, `✓ Données du tableau collées avec succès (${count} champs extraits) !`);
+      setInputMode("text");
+      return true;
+    }
+    return false;
+  }, [applyExtractedFields]);
 
   // Optimisation de l'image (redimensionnement si > 1800px ou > 2 Mo pour l'API Groq)
   const compressImageIfNeeded = (dataUrl, maxDimension = 1800, quality = 0.85) => {
@@ -109,13 +107,14 @@ export default function TransactionCaptureAnalyzer() {
       } catch {
         setImageBase64(rawDataUrl);
       }
-      setPasteNotice("✓ Capture d'écran collée avec succès !");
+      setInputMode("image");
+      setPasteNotice("✓ Capture d'écran chargée avec succès !");
       setTimeout(() => setPasteNotice(null), 3000);
     };
     reader.readAsDataURL(file);
   }, []);
 
-  // Détection d'une image dans les données du presse-papier
+  // Détection globale (image OU texte tabulé) dans les données du presse-papier
   const processClipboardData = useCallback((clipboardData) => {
     if (!clipboardData) return false;
 
@@ -144,12 +143,25 @@ export default function TransactionCaptureAnalyzer() {
       }
     }
 
+    // 3. Examiner le texte du presse-papier (tableau copié depuis RegTools / Excel / Web)
+    const textData = clipboardData.getData ? clipboardData.getData('text/plain') : null;
+    if (textData && textData.trim()) {
+      if (handlePastedTextContent(textData)) {
+        return true;
+      }
+    }
+
     return false;
-  }, [handleImageFile]);
+  }, [handleImageFile, handlePastedTextContent]);
 
   // Écoute globale de l'événement "Coller" (Ctrl+V) n'importe où dans la page
   useEffect(() => {
     const onPaste = (e) => {
+      // Si l'utilisateur est déjà en train de taper dans un champ texte standard autre que la zone globale
+      const targetTag = e.target?.tagName?.toLowerCase();
+      const isInput = targetTag === 'input' && e.target.type !== 'file';
+      if (isInput) return; // Laisser le comportement natif d'un input classique
+
       const clipboardData = e.clipboardData || window.clipboardData;
       if (processClipboardData(clipboardData)) {
         e.preventDefault();
@@ -168,33 +180,43 @@ export default function TransactionCaptureAnalyzer() {
   // Bouton pour coller directement via l'API presse-papier du navigateur
   const handlePasteFromClipboardApi = async () => {
     try {
-      if (!navigator.clipboard?.read) {
-        setPasteNotice("Appuyez simplement sur Ctrl + V sur votre clavier pour coller.");
-        setTimeout(() => setPasteNotice(null), 4000);
-        return;
+      // Priorité au texte si on est en mode texte
+      if (navigator.clipboard?.readText) {
+        try {
+          const text = await navigator.clipboard.readText();
+          if (text && handlePastedTextContent(text)) {
+            return;
+          }
+        } catch (e) {
+          console.warn("Lecture presse-papier texte non autorisée :", e);
+        }
       }
-      const clipboardItems = await navigator.clipboard.read();
-      let foundImage = false;
-      for (const item of clipboardItems) {
-        for (const type of item.types) {
-          if (type.startsWith('image/')) {
-            const blob = await item.getType(type);
-            handleImageFile(blob);
-            foundImage = true;
-            break;
+
+      // Recherche d'image
+      if (navigator.clipboard?.read) {
+        const clipboardItems = await navigator.clipboard.read();
+        for (const item of clipboardItems) {
+          for (const type of item.types) {
+            if (type.startsWith('image/')) {
+              const blob = await item.getType(type);
+              handleImageFile(blob);
+              return;
+            }
           }
         }
-        if (foundImage) break;
       }
-      if (!foundImage) {
-        setError("Aucune image trouvée dans le presse-papier. Faites d'abord une capture avec Win + Shift + S.");
-      }
+
+      setPasteNotice("Presse-papier prêt : appuyez sur Ctrl + V sur votre clavier !");
+      setTimeout(() => setPasteNotice(null), 3500);
     } catch (err) {
       console.warn("Erreur presse-papier:", err);
-      // Fallback
       setPasteNotice("Presse-papier prêt : appuyez sur Ctrl + V sur votre clavier !");
-      setTimeout(() => setPasteNotice(null), 4000);
-      if (dropZoneRef.current) dropZoneRef.current.focus();
+      setTimeout(() => setPasteNotice(null), 3500);
+      if (inputMode === 'text' && textAreaRef.current) {
+        textAreaRef.current.focus();
+      } else if (dropZoneRef.current) {
+        dropZoneRef.current.focus();
+      }
     }
   };
 
@@ -211,22 +233,61 @@ export default function TransactionCaptureAnalyzer() {
   const handleFieldChange = (key, value) => {
     const updated = { ...extractedFields, [key]: value };
     setExtractedFields(updated);
+    setPastedText(formatFieldsToText(updated));
   };
 
-  // Lancement de l'analyse IA Groq (Vision si image présente, sinon Text)
+  // Modification directe du textarea
+  const handleTextareaChange = (text) => {
+    setPastedText(text);
+    const parsed = parseTableText(text);
+    if (parsed && Object.keys(parsed).length > 0) {
+      setExtractedFields(parsed);
+      const evalRes = evaluateTransactionLocally(parsed);
+      setResult(evalRes);
+    }
+  };
+
+  // Chargement de l'exemple Chauffeur de Taxi (Badri Issam - 70 DT)
+  const handleLoadTaxiExample = () => {
+    applyExtractedFields(EXEMPLE_TAXI, "✓ Exemple Chauffeur de Taxi (Badri Issam) chargé !");
+    setInputMode("text");
+    setImagePreview(null);
+    setImageBase64(null);
+    setError(null);
+  };
+
+  // Chargement de l'exemple Médecin (Dr Ben Salah - 5 579 DT)
+  const handleLoadDoctorExample = () => {
+    applyExtractedFields(EXEMPLE_DOCTEUR, "✓ Exemple Quittance Médecin chargé !");
+    setInputMode("text");
+    setImagePreview(null);
+    setImageBase64(null);
+    setError(null);
+  };
+
+  const handleClearText = () => {
+    setPastedText("");
+    setExtractedFields({});
+    setResult(null);
+    if (textAreaRef.current) textAreaRef.current.focus();
+  };
+
+  // Lancement de l'analyse IA Groq (Vision si image présente, sinon Text/LLaMA)
   const handleRunAIAnalysis = async () => {
     setLoading(true);
     setError(null);
     try {
-      if (imageBase64 && apiKey) {
+      if (inputMode === 'image' && imageBase64 && apiKey) {
         setLoadingStep("Lecture visuelle de la capture via Groq Vision (Qwen 3.8 27B)...");
         const aiResult = await analyzeTransactionImageWithGroq(imageBase64);
         if (aiResult.champs_extraits) {
-          setExtractedFields(prev => ({ ...prev, ...aiResult.champs_extraits }));
+          const merged = { ...extractedFields, ...aiResult.champs_extraits };
+          setExtractedFields(merged);
+          setPastedText(formatFieldsToText(merged));
         }
         setResult(aiResult);
       } else {
-        setLoadingStep("Évaluation LCB-FT en cours...");
+        setLoadingStep("Évaluation experte LCB-FT en cours...");
         const aiResult = await evaluateTransactionDataWithGroq(extractedFields);
         setResult(aiResult);
       }
@@ -245,16 +306,6 @@ export default function TransactionCaptureAnalyzer() {
   const handleRunLocalAnalysis = () => {
     setError(null);
     const localResult = evaluateTransactionLocally(extractedFields);
-    setResult(localResult);
-  };
-
-  // Réinitialiser avec l'exemple type (Médecin - Espèces)
-  const handleLoadRealExample = () => {
-    setExtractedFields(EXEMPLE_CAPTURE_REELLE);
-    setImagePreview(null);
-    setImageBase64(null);
-    setError(null);
-    const localResult = evaluateTransactionLocally(EXEMPLE_CAPTURE_REELLE);
     setResult(localResult);
   };
 
@@ -278,6 +329,7 @@ export default function TransactionCaptureAnalyzer() {
 
   const analyse = result?.analyse || {};
   const isCloture = analyse.decision === "CLOTURE_SANS_SUITE";
+  const fieldCount = Object.keys(extractedFields).length;
 
   return (
     <div className="analyzer-container anim-up">
@@ -285,14 +337,13 @@ export default function TransactionCaptureAnalyzer() {
       <div className="analyzer-header card">
         <div className="analyzer-header-content">
           <div>
-            <div className="badge-tag">NOUVEAU · ASSISTANT REGTOOLS</div>
+            <div className="badge-tag">ASSISTANT REGTOOLS & CONFORMITÉ AML</div>
             <h2 className="analyzer-title">
-              📸 Analyseur Intelligent de Capture (RegTools & Quittances)
+              📋 Analyseur Intelligent de Données & Captures RegTools
             </h2>
             <p className="analyzer-subtitle">
-              Collez la capture d'écran du tableau <strong>Infos supplémentaires</strong> ou de l'alerte RegTools.
-              L'outil extrait les données, analyse la légitimité AML de la transaction et génère immédiatement 
-              la <strong>Raison de clôture</strong> et la <strong>Note d'investigation</strong> à reporter dans RegTools.
+              Collez directement le <strong>tableau de données (CLÉ / VALEUR)</strong> copié depuis RegTools pour une précision à 100%, ou une <strong>capture d'écran</strong>. 
+              L'outil analyse immédiatement la légitimité AML de la transaction et génère la <strong>Raison de clôture</strong> et la <strong>Note d'investigation</strong> à reporter dans RegTools.
             </p>
           </div>
           <div className="analyzer-header-actions">
@@ -305,10 +356,17 @@ export default function TransactionCaptureAnalyzer() {
             </button>
             <button
               className="btn-accent"
-              onClick={handleLoadRealExample}
-              title="Recharger l'exemple type (Médecin - Paiement espèces)"
+              onClick={handleLoadTaxiExample}
+              title="Charger l'exemple réel Chauffeur de Taxi (Badri Issam - 70 DT)"
             >
-              🔄 Exemple Quittance (Médecin)
+              🚕 Exemple Taxi (Badri Issam)
+            </button>
+            <button
+              className="btn-sec"
+              onClick={handleLoadDoctorExample}
+              title="Charger l'exemple Médecin (Dr Ben Salah - Espèces > 5 000 DT)"
+            >
+              🩺 Exemple Médecin
             </button>
           </div>
         </div>
@@ -317,8 +375,8 @@ export default function TransactionCaptureAnalyzer() {
         {showKeyInput && (
           <div className="api-key-box anim-fade">
             <div className="api-key-header">
-              <strong>Configuration de la clé API Groq (Optionnel mais recommandé)</strong>
-              <small>Permet d'utiliser les modèles Vision LLaMA pour lire directement vos captures.</small>
+              <strong>Configuration de la clé API Groq (Optionnel)</strong>
+              <small>Permet d'utiliser les modèles LLM LLaMA / Qwen pour enrichir l'argumentaire juridique.</small>
             </div>
             <div className="api-key-input-row">
               <input
@@ -335,89 +393,166 @@ export default function TransactionCaptureAnalyzer() {
         )}
       </div>
 
-      {/* ─── ZONE D'IMPORTATION / CAPTURE D'ÉCRAN ─────────────────────────── */}
+      {/* ─── ZONE D'IMPORTATION : TEXTE OU CAPTURE D'ÉCRAN ─────────────────── */}
       <div className="analyzer-drop-zone-card card">
         {pasteNotice && (
           <div className="paste-success-alert anim-fade">
             <span>{pasteNotice}</span>
           </div>
         )}
-        <div className="drop-zone-grid">
-          <div
-            ref={dropZoneRef}
-            className={`drop-zone ${imagePreview ? 'has-image' : ''}`}
-            tabIndex={0}
-            title="Cliquez ici et faites Ctrl + V pour coller votre capture d'écran"
-            onPaste={(e) => {
-              const cb = e.clipboardData || window.clipboardData;
-              if (processClipboardData(cb)) {
-                e.preventDefault();
-                e.stopPropagation();
-              }
-            }}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              const file = e.dataTransfer.files?.[0];
-              if (file) handleImageFile(file);
-            }}
+
+        {/* ONGLETS DE SÉLECTION DU MODE DE SAISIE */}
+        <div className="input-mode-tabs">
+          <button
+            type="button"
+            className={`input-mode-btn ${inputMode === 'text' ? 'active' : ''}`}
+            onClick={() => setInputMode('text')}
           >
-            {imagePreview ? (
-              <div className="image-preview-wrapper">
-                <img src={imagePreview} alt="Aperçu capture" className="captured-image" />
-                <button
-                  className="remove-img-btn"
-                  onClick={() => {
-                    setImagePreview(null);
-                    setImageBase64(null);
-                  }}
-                  title="Supprimer cette capture"
-                >
-                  ✕ Supprimer
-                </button>
-                <div className="image-overlay-info">
-                  ✓ Capture chargée depuis le presse-papier
-                </div>
-              </div>
-            ) : (
-              <div className="drop-zone-placeholder">
-                <div className="drop-icon">📋</div>
-                <div className="drop-main-text">
-                  <strong>Collez directement avec Ctrl + V</strong>
-                </div>
-                <div className="drop-sub-text">
-                  Exactement comme coller du texte : faites votre capture d'écran puis tapez <strong>Ctrl + V</strong> n'importe où !
-                </div>
-                <div style={{ marginTop: 14 }}>
+            📋 Coller le texte du tableau <span className="mode-badge-rec">100% Précis</span>
+          </button>
+          <button
+            type="button"
+            className={`input-mode-btn ${inputMode === 'image' ? 'active' : ''}`}
+            onClick={() => setInputMode('image')}
+          >
+            📸 Capture d'écran (Image)
+          </button>
+        </div>
+
+        <div className="drop-zone-grid">
+          {/* PANNEAU DE GAUCHE : SAISIE TEXTE OU IMAGE */}
+          {inputMode === 'text' ? (
+            <div className="paste-text-wrapper">
+              <div className="paste-text-toolbar">
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <button
                     type="button"
-                    className="btn-accent paste-btn-large"
+                    className="btn-accent"
                     onClick={handlePasteFromClipboardApi}
-                    title="Cliquez pour coller directement l'image présente dans votre presse-papier"
+                    title="Coller directement le texte présent dans votre presse-papier"
                   >
-                    📋 Coller la capture du presse-papier
+                    📋 Coller du presse-papier
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-sec"
+                    onClick={handleClearText}
+                    title="Effacer le contenu de la zone de texte"
+                  >
+                    🧹 Effacer
                   </button>
                 </div>
-                <label className="browse-file-sublink">
-                  ou importer une image depuis l'ordinateur
-                  <input
-                    type="file"
-                    accept="image/*"
-                    style={{ display: 'none' }}
-                    onChange={handleFileUpload}
-                  />
-                </label>
+                <div className="detected-fields-pill">
+                  ✓ {fieldCount} champ{fieldCount > 1 ? 's' : ''} détecté{fieldCount > 1 ? 's' : ''}
+                </div>
               </div>
-            )}
-          </div>
 
+              <textarea
+                ref={textAreaRef}
+                className="paste-textarea"
+                rows={12}
+                value={pastedText}
+                onChange={(e) => handleTextareaChange(e.target.value)}
+                placeholder={`Collez ici le tableau copié depuis RegTools (CLÉ / VALEUR)\n\nExemple :\nCLÉ\tVALEUR\nN_CLIENT\t670047\nLIB_PROF\tCHAUFFEUR DE TAXI\nPRIME_ENCAIS\t70416\n...`}
+              />
+
+              {/* Puces de prévisualisation en temps réel */}
+              <div className="quick-preview-chips">
+                <span className="preview-chip">👤 Sociétaire: <strong>{extractedFields.NOM_ADH || "N/A"}</strong></span>
+                <span className="preview-chip">💼 Profession: <strong>{extractedFields.LIB_PROF || "N/A"}</strong></span>
+                <span className="preview-chip">💰 Prime: <strong>{result?.analyse?.montant_converti_tnd || (extractedFields.PRIME_ENCAIS ? extractedFields.PRIME_ENCAIS + ' millimes' : "N/A")}</strong></span>
+                <span className="preview-chip">💳 Mode: <strong>{String(extractedFields.M) === "1" ? "Espèces (M=1)" : "Autre"}</strong></span>
+                <span className="preview-chip">📑 Police: <strong>{extractedFields.N_POLICE || "N/A"}</strong></span>
+                <span className="preview-chip">🏢 Agence: <strong>{extractedFields.AGENCE || "N/A"}</strong></span>
+                {extractedFields.STATUT_CON && (
+                  <span className="preview-chip">⚠️ Statut contrat: <strong>{extractedFields.STATUT_CON}</strong></span>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div
+              ref={dropZoneRef}
+              className={`drop-zone ${imagePreview ? 'has-image' : ''}`}
+              tabIndex={0}
+              title="Cliquez ici et faites Ctrl + V pour coller votre capture d'écran"
+              onPaste={(e) => {
+                const cb = e.clipboardData || window.clipboardData;
+                if (processClipboardData(cb)) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }
+              }}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const file = e.dataTransfer.files?.[0];
+                if (file) handleImageFile(file);
+              }}
+            >
+              {imagePreview ? (
+                <div className="image-preview-wrapper">
+                  <img src={imagePreview} alt="Aperçu capture" className="captured-image" />
+                  <button
+                    className="remove-img-btn"
+                    onClick={() => {
+                      setImagePreview(null);
+                      setImageBase64(null);
+                    }}
+                    title="Supprimer cette capture"
+                  >
+                    ✕ Supprimer
+                  </button>
+                  <div className="image-overlay-info">
+                    ✓ Capture chargée depuis le presse-papier
+                  </div>
+                </div>
+              ) : (
+                <div className="drop-zone-placeholder">
+                  <div className="drop-icon">📸</div>
+                  <div className="drop-main-text">
+                    <strong>Collez la capture d'écran avec Ctrl + V</strong>
+                  </div>
+                  <div className="drop-sub-text">
+                    Faites votre capture d'écran (Win + Shift + S) puis tapez <strong>Ctrl + V</strong> n'importe où !
+                  </div>
+                  <div style={{ marginTop: 14 }}>
+                    <button
+                      type="button"
+                      className="btn-accent paste-btn-large"
+                      onClick={handlePasteFromClipboardApi}
+                      title="Cliquez pour coller l'image présente dans votre presse-papier"
+                    >
+                      📋 Coller la capture du presse-papier
+                    </button>
+                  </div>
+                  <label className="browse-file-sublink">
+                    ou importer une image depuis l'ordinateur
+                    <input
+                      type="file"
+                      accept="image/*"
+                      style={{ display: 'none' }}
+                      onChange={handleFileUpload}
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* PANNEAU DE DROITE : ASTUCES & ACTIONS RAPIDES */}
           <div className="drop-zone-side">
             <div className="side-tips">
               <h4>💡 Comment l'utiliser en 3 secondes :</h4>
               <ol>
-                <li>Sur votre écran RegTools, faites <code>Win + Shift + S</code> pour capturer la fenêtre.</li>
-                <li>Cliquez sur cette page et faites <strong>Ctrl + V</strong>.</li>
-                <li>Cliquez sur <strong>« Analyser la capture »</strong> : vos textes sont prêts !</li>
+                <li>
+                  <strong>Méthode Texte (Recommandée & 100% fidèle) :</strong> Sélectionnez le tableau dans RegTools avec la souris, tapez <code>Ctrl + C</code>, puis faites <strong>Ctrl + V</strong> ici.
+                </li>
+                <li>
+                  <strong>Méthode Image :</strong> Faites <code>Win + Shift + S</code>, puis <strong>Ctrl + V</strong> ici.
+                </li>
+                <li>
+                  Les résultats s'affichent instantanément avec la <strong>Raison</strong> et la <strong>Note</strong> prêtes à être copiées dans RegTools !
+                </li>
               </ol>
             </div>
 
@@ -472,7 +607,7 @@ export default function TransactionCaptureAnalyzer() {
                 </h3>
                 <div className="verdict-meta">
                   Règle : <strong>{analyse.regle_declenchee || "Paiement en espèce"}</strong> · 
-                  Montant : <strong>{analyse.montant_converti_tnd || "5 579.024 DT"}</strong> · 
+                  Montant : <strong>{analyse.montant_converti_tnd || "70.416 TND"}</strong> · 
                   Mode : <strong>{analyse.mode_paiement_libelle || "Espèces (M=1)"}</strong> · 
                   Risque : <span className={`risk-badge risk-${analyse.niveauRisque?.toLowerCase()}`}>{analyse.niveauRisque || "FAIBLE"}</span>
                 </div>
