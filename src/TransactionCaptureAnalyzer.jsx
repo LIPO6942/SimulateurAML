@@ -623,7 +623,25 @@ export default function TransactionCaptureAnalyzer() {
             </div>
           </div>
 
-          {/* GRILLE DES DEUX TEXTES À COPIER DIRECTEMENT DANS REGTOOLS */}
+          {/* SCÉNARIOS RÉGLEMENTAIRES DÉTECTÉS PARMI LES 13 */}
+          {analyse.alertes_detectees?.length > 0 && (
+            <div className="card anim-up" style={{ marginBottom: 16, borderLeft: '4px solid var(--text-warning)' }}>
+              <div className="card-hd" style={{ paddingBottom: 6 }}>
+                <h4 style={{ margin: 0, fontSize: '0.95rem' }}>
+                  🎯 Scénarios réglementaires identifiés ({analyse.alertes_detectees.length}/13) :
+                </h4>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+                {analyse.alertes_detectees.map(a => (
+                  <span key={a.id} className={`chip ${a.gravite === 'critique' ? 'c-red' : 'c-ora'}`} style={{ padding: '6px 12px', fontSize: '0.85rem' }}>
+                    <strong>{a.code}</strong> — {a.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* GRILLE DES LIVRABLES DÉCISIONNELS (CLÔTURE, INVESTIGATION, SOUPÇON) */}
           <div className="copy-cards-grid">
             {/* CARTE 1 : RAISON DE CLÔTURE (CHAMP ROUGE REGTOOLS) */}
             <div className="copy-card card highlight-card">
@@ -666,6 +684,30 @@ export default function TransactionCaptureAnalyzer() {
               </div>
               <div className="copy-text-box note-box">
                 <pre>{analyse.note_investigation_regtools}</pre>
+              </div>
+            </div>
+
+            {/* CARTE 3 : DÉCLARATION DE SOUPÇON (CTAF / goAML) */}
+            <div className="copy-card card highlight-card" style={{ gridColumn: '1 / -1' }}>
+              <div className="copy-card-header">
+                <div>
+                  <div className="target-field-tag" style={{ background: 'rgba(220, 38, 38, 0.15)', color: '#dc2626', borderColor: '#dc2626' }}>
+                    Signalement CTAF / goAML : Article 20 Loi n°2015-26
+                  </div>
+                  <h3 className="copy-card-title">🚨 Déclaration de Soupçon (DS / CTAF)</h3>
+                  <p className="copy-card-desc">
+                    Argumentaire juridique et motifs de suspicion pour transmission à la CTAF
+                  </p>
+                </div>
+                <button
+                  className={`copy-action-btn ${copiedField === 'soupcon' ? 'copied' : ''}`}
+                  onClick={() => copyToClipboard(analyse.motif_soupcon_goaml || analyse.raison_cloture_regtools, 'soupcon')}
+                >
+                  {copiedField === 'soupcon' ? '✓ Soupçon copié !' : '📋 Copier l\'Argumentaire CTAF'}
+                </button>
+              </div>
+              <div className="copy-text-box note-box">
+                <pre>{analyse.motif_soupcon_goaml || "Aucun motif de soupçon immédiat caractérisé. Dossier conforme."}</pre>
               </div>
             </div>
           </div>

@@ -1,3 +1,5 @@
+import { checkAlert, AML_SCENARIOS, getGroupe } from './engine.js';
+
 // ─── GROQ AI SERVICE — Smart-AML Decision Support ──────────────────────────
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODEL = "llama-3.3-70b-versatile";
@@ -542,12 +544,13 @@ export const EXEMPLE_TAXI = {
 
 /**
  * Moteur d'évaluation expert LCB-FT déterministe (fonctionne 100% hors-ligne ou sans clé API)
+ * Évalue la transaction sur l'ensemble des 13 scénarios réglementaires AML.
  */
 export function evaluateTransactionLocally(rawFields = {}) {
     // Normalisation des champs
     const nom = rawFields.NOM_ADH || rawFields.nom || "BADRI ISSAM";
     const titre = rawFields.LIB_TIT || rawFields.titre || "Mr";
-    const prof = rawFields.LIB_PROF || rawFields.profession || "CHAUFFEUR DE TAXI";
+    const prof = rawFields.LIB_PROF || rawFields.profession || rawFields.activite || "CHAUFFEUR DE TAXI";
     const cin = rawFields.CIN || rawFields.cin || "8772861";
     const agence = rawFields.AGENCE || rawFields.agence || "117";
     const police = rawFields.N_POLICE || rawFields.police || "100117104";
@@ -557,7 +560,8 @@ export function evaluateTransactionLocally(rawFields = {}) {
     const effQuit = rawFields.EFF_QUIT || "13/01/2026";
     const statutContrat = (rawFields.STATUT_CON || "").toLowerCase();
     const cStatut = rawFields.CSTATUT || "2";
-    
+    const sourceSystem = rawFields.source_system || "Auto/Irds";
+
     // Traitement du montant (millimes vs Dinars)
     const montantDinars = parseMontantTnd(rawFields.PRIME_ENCAIS ?? rawFields.montant, 70.416);
     const montantFmt = montantDinars.toLocaleString('fr-TN', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + " TND";
@@ -580,6 +584,29 @@ export function evaluateTransactionLocally(rawFields = {}) {
     const isTaxiOrTransport = profNorm.includes("taxi") || profNorm.includes("chauffeur") || profNorm.includes("transport");
     const isEtudiantOuSansProf = profNorm.includes("etudiant") || profNorm.includes("sans profession") || profNorm.includes("chomeur") || profNorm.includes("inactif");
 
+    // Évaluation via le moteur officiel des 13 scénarios
+    const amlProfile = {
+        nom,
+        prenom: "",
+        activite: prof,
+        LIB_PROF: prof,
+        source_system: sourceSystem,
+        typeOperation: "souscription",
+        capitalAssure: parseMontantTnd(rawFields.MAX_CAP || rawFields.VAL_VENTE, 0),
+        prime: montantDinars,
+        paiementEspeces: isEspeces ? montantDinars : 0,
+        isEspeces,
+        M: rawFields.M,
+        MODE_PAIEMENT: isEspeces ? "ESPECE" : "AUTRE",
+        police,
+        agence,
+        valeurBien: valBienDinars,
+        pays: rawFields.pays || "Tunisie"
+    };
+
+    const alertResults = checkAlert(amlProfile);
+    const triggeredAlerts = alertResults.alertes || [];
+
     // Dépassement du seuil de cash légal de 5 000 DT (Loi 2015-26 & Règlement CGA)
     const depasseSeuilCash = isEspeces && montantDinars > 5000;
 
@@ -587,10 +614,13 @@ export function evaluateTransactionLocally(rawFields = {}) {
     let statutRegTools = "Clôturé";
     let niveauRisque = "FAIBLE";
     let coherence = "Excellente";
-    let regleDeclenchee = "";
+    let regleDeclenchee = triggeredAlerts.length > 0 
+        ? triggeredAlerts.map(a => `${a.code} - ${a.label}`).join(" | ") 
+        : `Aucune alerte (conforme aux 13 scénarios)`;
     let points = [];
     let raisonCloture = "";
     let noteInvestigation = "";
+    let motifSoupcon = "";
 
     if (isEtudiantOuSansProf && (montantDinars > 1000 || depasseSeuilCash)) {
         // CAS INCOHÉRENT : Sans profession / Étudiant avec prime importante
@@ -599,7 +629,7 @@ export function evaluateTransactionLocally(rawFields = {}) {
         niveauRisque = "ELEVE";
         coherence = "Incohérente";
         regleDeclenchee = depasseSeuilCash 
-            ? `Paiement en espèces > 5 000 DT (${montantFmt})`
+            ? `Scénario 10: Paiement en espèces > 5 000 DT (${montantFmt})`
             : `Montant atypique pour profil sans revenu connu (${montantFmt})`;
         points = [
             `Règlement au comptant de ${montantFmt}${montantMillimesStr} pour un profil sans profession ou étudiant.`,
@@ -623,6 +653,11 @@ Le profil socio-économique déclaré ne présente pas une surface financière a
 
 4. CONCLUSION & DÉCISION :
 Investigation approfondie requise. Dossier maintenu en cours d'instruction. Demande formelle adressée à l'agence ${agence} pour obtenir le justificatif de provenance des fonds et la copie conforme de la CIN à jour.`;
+
+        motifSoupcon = `DÉCLARATION DE SOUPÇON (Réf: CTAF - Article 20 Loi n°2015-26)
+Sociétaire : ${nom} (${prof})
+Contrat : ${police} - Quittance : ${quittance} (${montantFmt})
+Motif : Règlements en espèces importants pour une personne sans ressources régulières déclarées. Risque élevé de prêt de nom ou de dissimulation de capitaux d'origine illicite. Déclaration transmise à la CTAF.`;
 
     } else if (isTaxiOrTransport || (!depasseSeuilCash && montantDinars <= 5000)) {
         // CAS 1 : Montant sous le seuil légal de 5 000 DT (ex: Taxi Badri Issam 70.416 DT)
@@ -663,13 +698,15 @@ Examen du contrôle RegTools sur la quittance n°${quittance} relative à la pol
 L'opération présente une parfaite légitimité économique. Aucun indice de blanchiment de capitaux ou de financement du terrorisme n'est caractérisé.
 Dossier classé sans suite, statut recommandé dans RegTools : Clôturé.`;
 
+        motifSoupcon = `Aucun soupçon caractérisé. Les opérations sont conformes aux dispositions de la Loi n°2015-26. Pas de déclaration nécessaire.`;
+
     } else {
         // CAS 2 : Montant > 5 000 DT avec profession établie (ex: Médecin, Cadre, Profession libérale)
         decision = "CLOTURE_SANS_SUITE";
         statutRegTools = "Clôturé";
         niveauRisque = "FAIBLE";
         coherence = "Excellente";
-        regleDeclenchee = `Paiement en espèces supérieur à 5 000 DT (M=1, ${montantFmt})`;
+        regleDeclenchee = `Scénario 10: Paiement en espèces supérieur à 5 000 DT (M=1, ${montantFmt})`;
         points = [
             `Règle déclenchée : Paiement en espèces de ${montantFmt} dépassant le seuil de 5 000 DT (M = 1).`,
             `Cohérence socio-professionnelle : Sociétaire ${titre} ${nom}, exerçant la profession de ${prof}, générant une surface financière en parfaite adéquation avec la prime.`,
@@ -695,6 +732,16 @@ Le sociétaire dispose d'une assise financière régulière et documentée compa
 4. CONCLUSION DE CONFORMITÉ (LEVÉE DE DOUTE) :
 Les éléments recueillis attestent de la légitimité économique de l'opération. L'opération ne présente aucun indice de blanchiment de capitaux, de fractionnement ou de dissimulation de fonds.
 Dossier classé sans suite, maintien du sociétaire en Risque Faible et clôture de l'alerte sur RegTools.`;
+
+        motifSoupcon = `Dépassement formel du seuil espèces sous-tendu par une assise économique vérifiée (${prof}). Absence de soupçon de blanchiment. Clôture interne sans déclaration CTAF.`;
+    }
+
+    // Si une alerte spécifique des 13 scénarios a fourni des templates dédiés
+    if (triggeredAlerts.length > 0 && triggeredAlerts[0].decisions) {
+        const topDec = triggeredAlerts[0].decisions;
+        if (topDec.raisonCloture) raisonCloture = topDec.raisonCloture;
+        if (topDec.noteInvestigation) noteInvestigation = topDec.noteInvestigation;
+        if (topDec.motifSoupcon) motifSoupcon = topDec.motifSoupcon;
     }
 
     return {
@@ -718,7 +765,7 @@ Dossier classé sans suite, maintien du sociétaire en Risque Faible et clôture
             N_QUITTANCE: quittance,
             EFF_QUIT: effQuit,
             FIN_QUIT: rawFields.FIN_QUIT || "12/07/2026",
-            source_system: rawFields.source_system || "Auto/Irds",
+            source_system: sourceSystem,
             STATUT_CON: rawFields.STATUT_CON || "suspendu",
             CSTATUT: rawFields.CSTATUT || "2",
             ...rawFields
@@ -733,7 +780,9 @@ Dossier classé sans suite, maintien du sociétaire en Risque Faible et clôture
             coherence_socio_economique: coherence,
             points_analyse: points,
             raison_cloture_regtools: raisonCloture,
-            note_investigation_regtools: noteInvestigation
+            note_investigation_regtools: noteInvestigation,
+            motif_soupcon_goaml: motifSoupcon,
+            alertes_detectees: triggeredAlerts
         }
     };
 }

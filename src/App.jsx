@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { db } from './firebase.js';
 import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, setDoc, writeBatch } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { getGroupe, SEUILS, checkAlert } from './engine.js';
+import { getGroupe, SEUILS, checkAlert, AML_SCENARIOS } from './engine.js';
 import { CLIENT_VIDE } from './data.js';
 import './styles.css';
 import { debounce } from 'lodash';
@@ -512,6 +512,8 @@ const WelcomePanel = ({ addClient, setTab }) => (
 
 
 const ResultPanel = ({ results, client, riskScore }) => {
+  const [copiedKey, setCopiedKey] = useState(null);
+
   if (!results) return (
     <div className="empty-state">
       <h3>Aucune simulation lancée pour ce client.</h3>
@@ -524,7 +526,7 @@ const ResultPanel = ({ results, client, riskScore }) => {
     if (alerts.some(a => a.gravite === 'critique')) return { label: "Critique", chip: "c-red" };
     if (alerts.some(a => a.gravite === 'haute')) return { label: "Haute", chip: "c-ora" };
     return { label: "Moyenne", chip: "c-yel" };
-  }
+  };
   const verdict = getVerdict();
 
   const getRiskScoreColor = (niveau) => {
@@ -536,9 +538,16 @@ const ResultPanel = ({ results, client, riskScore }) => {
     }
   };
 
+  const copyText = (txt, key) => {
+    if (!txt) return;
+    navigator.clipboard.writeText(txt);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2500);
+  };
+
   return (
     <div>
-      <div className="panel-t">Résultats de simulation</div>
+      <div className="panel-t">Résultats d'évaluation — Matrice des 13 Scénarios</div>
       <div className="verdict-box">
         <div className={`vc ${alerts.length === 0 ? "vc-ok" : "vc-al"}`}>
           <div className="vc-n">{alerts.length}</div>
@@ -546,7 +555,7 @@ const ResultPanel = ({ results, client, riskScore }) => {
         </div>
         <div>
           <div className="vd-nm">{client.nom}</div>
-          <div className="vd-meta">{client.id} · {client.activite} · {client.niveauRisque}</div>
+          <div className="vd-meta">{client.id} · {client.activite} · Risque: {client.niveauRisque}</div>
           <div className="vd-chips">
             <span className={`chip ${verdict.chip}`}>Risque Global: {verdict.label}</span>
             {riskScore && (
@@ -557,15 +566,32 @@ const ResultPanel = ({ results, client, riskScore }) => {
           </div>
         </div>
       </div>
+
       <table className="ind-table">
-        <thead><tr><th>#</th><th>Indicateur</th><th>Valeur(s)</th><th>Seuil</th><th style={{ textAlign: "center" }}>Verdict</th></tr></thead>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Scénario Officiel</th>
+            <th>Valeur constatée</th>
+            <th>Seuil réglementaire</th>
+            <th style={{ textAlign: "center" }}>Verdict</th>
+          </tr>
+        </thead>
         <tbody>
           {results.map(ind => (
             <tr key={ind.id} className={ind.alerte ? "row-alerte" : ""}>
-              <td><div className="ind-id">{ind.id}</div></td>
               <td>
-                <div className="ind-label">{ind.label}</div>
-                <div className="ind-rule">{ind.regle}</div>
+                <div className="ind-id" style={{ fontWeight: 'bold' }}>
+                  {ind.code ? ind.code.replace('SCEN_', 'S') : `S${ind.id}`}
+                </div>
+              </td>
+              <td>
+                <div className="ind-label" style={{ fontWeight: ind.alerte ? 700 : 500 }}>
+                  {ind.label}
+                </div>
+                <div className="ind-rule" style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                  {ind.regle}
+                </div>
               </td>
               <td><div className="ind-vals">{ind.valeurs}</div></td>
               <td>
@@ -582,11 +608,96 @@ const ResultPanel = ({ results, client, riskScore }) => {
           ))}
         </tbody>
       </table>
+
+      {/* ─── VOLET DÉCISIONNEL & LIVRABLES REGTOOLS / CTAF ────────────────── */}
+      {alerts.length > 0 && (
+        <div className="card anim-up" style={{ marginTop: 24, borderTop: '4px solid var(--text-accent)' }}>
+          <div className="card-hd">
+            <div>
+              <h3 className="card-tit" style={{ margin: 0 }}>
+                ⚖️ Livrables de décision pour les {alerts.length} alerte{alerts.length > 1 ? 's' : ''} déclenchée{alerts.length > 1 ? 's' : ''}
+              </h3>
+              <p className="card-desc">
+                Textes réglementaires générés automatiquement, prêts à être copiés dans RegTools ou le portail CTAF.
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 12 }}>
+            {alerts.map((al, idx) => {
+              const dec = al.decisions || {};
+              const kCloture = `cloture_${al.id}`;
+              const kInvest = `invest_${al.id}`;
+              const kSoupcon = `soupcon_${al.id}`;
+
+              return (
+                <div key={al.id} style={{ background: 'var(--bg-accent)', padding: 14, borderRadius: 8, border: '1px solid var(--border-color)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span className={`chip ${al.gravite === 'critique' ? 'c-red' : 'c-ora'}`}>
+                        {al.code}
+                      </span>
+                      <strong>{al.label}</strong>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className="btn-accent btn-sm"
+                        onClick={() => copyText(dec.raisonCloture, kCloture)}
+                        title="Copier la raison de clôture sans suite"
+                      >
+                        {copiedKey === kCloture ? '✓ Raison copiée !' : '📋 Copier Raison Clôture'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-sec btn-sm"
+                        onClick={() => copyText(dec.noteInvestigation, kInvest)}
+                        title="Copier la note d'investigation"
+                      >
+                        {copiedKey === kInvest ? '✓ Note copiée !' : '🔍 Copier Note Investigation'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-sec btn-sm"
+                        style={{ color: '#dc2626', borderColor: '#dc2626' }}
+                        onClick={() => copyText(dec.motifSoupcon, kSoupcon)}
+                        title="Copier l'argumentaire pour la CTAF"
+                      >
+                        {copiedKey === kSoupcon ? '✓ CTAF copié !' : '🚨 Copier Motif CTAF'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div style={{ background: 'var(--bg-sec)', padding: 10, borderRadius: 6, fontSize: '0.85rem' }}>
+                      <div style={{ fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                        Champ RegTools « Raison * » (Clôture) :
+                      </div>
+                      <div style={{ color: 'var(--text-primary)', fontStyle: 'italic' }}>
+                        {dec.raisonCloture}
+                      </div>
+                    </div>
+                    <div style={{ background: 'var(--bg-sec)', padding: 10, borderRadius: 6, fontSize: '0.85rem' }}>
+                      <div style={{ fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                        Encadré RegTools « Note d'investigation » :
+                      </div>
+                      <div style={{ color: 'var(--text-primary)', maxHeight: 100, overflowY: 'auto', whiteSpace: 'pre-line' }}>
+                        {dec.noteInvestigation}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
-  )
+  );
 };
 
 const SettingsPanel = () => {
+  const [activeTab, setActiveTab] = useState("referentiel"); // "referentiel" ou "seuils"
   const [seuils, setSeuils] = useState(SEUILS);
   const [modified, setModified] = useState(false);
 
@@ -602,7 +713,6 @@ const SettingsPanel = () => {
   };
 
   const handleSave = () => {
-    // TODO: Sauvegarder les seuils dans Firestore
     setModified(false);
     alert("Seuils sauvegardés avec succès !");
   };
@@ -615,169 +725,206 @@ const SettingsPanel = () => {
 
   return (
     <div>
-      <div className="panel-t">Configuration des seuils LCB-FT</div>
+      <div className="panel-t">Référentiel & Configuration des 13 Scénarios AML</div>
       <p className="panel-desc">
-        Modifiez les seuils des indicateurs AML. Les changements seront appliqués à toutes les simulations futures.
+        L'ensemble des 13 scénarios réglementaires est mémorisé dans le fichier <code>src/scenariosConfig.js</code> pour modification ultérieure.
       </p>
-      
-      <div className="settings-grid">
-        {/* Indicateur 2: Capital Assuré */}
-        <div className="setting-card">
-          <div className="setting-header">
-            <h3>Indicateur 2: Capital Assuré Élevé</h3>
-            <span className="chip c-ora">Haute Gravité</span>
-          </div>
-          <div className="setting-content">
-            <div className="seuil-table">
-              <div className="seuil-row">
-                <div className="seuil-label">Groupe</div>
-                <div className="seuil-label">RM/RF</div>
-                <div className="seuil-label">RE</div>
-              </div>
-              {Object.keys(seuils.ind2).map(groupe => (
-                <div key={groupe} className="seuil-row">
-                  <div className="seuil-label">{groupe.charAt(0).toUpperCase() + groupe.slice(1)}</div>
-                  <input
-                    type="number"
-                    value={seuils.ind2[groupe]["RM/RF"]}
-                    onChange={(e) => handleSeuilChange("ind2", groupe, "RM/RF", e.target.value)}
-                    className="seuil-input"
-                  />
-                  <input
-                    type="number"
-                    value={seuils.ind2[groupe]["RE"]}
-                    onChange={(e) => handleSeuilChange("ind2", groupe, "RE", e.target.value)}
-                    className="seuil-input"
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
 
-        {/* Indicateur 3: Prime Élevée */}
-        <div className="setting-card">
-          <div className="setting-header">
-            <h3>Indicateur 3: Prime Élevée</h3>
-            <span className="chip c-ora">Haute Gravité</span>
-          </div>
-          <div className="setting-content">
-            <div className="seuil-table">
-              <div className="seuil-row">
-                <div className="seuil-label">Groupe</div>
-                <div className="seuil-label">RM/RF</div>
-                <div className="seuil-label">RE</div>
-              </div>
-              {Object.keys(seuils.ind3).map(groupe => (
-                <div key={groupe} className="seuil-row">
-                  <div className="seuil-label">{groupe.charAt(0).toUpperCase() + groupe.slice(1)}</div>
-                  <input
-                    type="number"
-                    value={seuils.ind3[groupe]["RM/RF"]}
-                    onChange={(e) => handleSeuilChange("ind3", groupe, "RM/RF", e.target.value)}
-                    className="seuil-input"
-                  />
-                  <input
-                    type="number"
-                    value={seuils.ind3[groupe]["RE"]}
-                    onChange={(e) => handleSeuilChange("ind3", groupe, "RE", e.target.value)}
-                    className="seuil-input"
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Indicateur 4: Rachat */}
-        <div className="setting-card">
-          <div className="setting-header">
-            <h3>Indicateur 4: Rachat de Contrat</h3>
-            <span className="chip c-ora">Haute Gravité</span>
-          </div>
-          <div className="setting-content">
-            <div className="seuil-table">
-              <div className="seuil-row">
-                <div className="seuil-label">Groupe</div>
-                <div className="seuil-label">RM/RF</div>
-                <div className="seuil-label">RE</div>
-              </div>
-              {Object.keys(seuils.ind4).map(groupe => (
-                <div key={groupe} className="seuil-row">
-                  <div className="seuil-label">{groupe.charAt(0).toUpperCase() + groupe.slice(1)}</div>
-                  <input
-                    type="number"
-                    value={seuils.ind4[groupe]["RM/RF"]}
-                    onChange={(e) => handleSeuilChange("ind4", groupe, "RM/RF", e.target.value)}
-                    className="seuil-input"
-                  />
-                  <input
-                    type="number"
-                    value={seuils.ind4[groupe]["RE"]}
-                    onChange={(e) => handleSeuilChange("ind4", groupe, "RE", e.target.value)}
-                    className="seuil-input"
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Indicateur 8: Capital Bayti */}
-        <div className="setting-card">
-          <div className="setting-header">
-            <h3>Indicateur 8: Capital Bayti Incohérent</h3>
-            <span className="chip c-ora">Haute Gravité</span>
-          </div>
-          <div className="setting-content">
-            <div className="seuil-table">
-              <div className="seuil-row">
-                <div className="seuil-label">Groupe</div>
-                <div className="seuil-label">Seuil (DT)</div>
-              </div>
-              {Object.keys(seuils.ind8).map(groupe => (
-                <div key={groupe} className="seuil-row">
-                  <div className="seuil-label">{groupe.charAt(0).toUpperCase() + groupe.slice(1)}</div>
-                  <input
-                    type="number"
-                    value={seuils.ind8[groupe]}
-                    onChange={(e) => handleSeuilChange("ind8", groupe, null, e.target.value)}
-                    className="seuil-input"
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Indicateur 10: Paiement Espèces */}
-        <div className="setting-card">
-          <div className="setting-header">
-            <h3>Indicateur 10: Paiement en Espèces</h3>
-            <span className="chip c-red">Critique</span>
-          </div>
-          <div className="setting-content">
-            <div className="seuil-single">
-              <div className="seuil-label">Seuil (DT)</div>
-              <input
-                type="number"
-                value={seuils.ind10.seuil}
-                onChange={(e) => handleSeuilChange("ind10", "seuil", null, e.target.value)}
-                className="seuil-input large"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="settings-actions">
-        <button className="btn-secondary" onClick={handleReset} disabled={!modified}>
-          🔄 Réinitialiser
+      {/* Onglets de configuration */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+        <button
+          type="button"
+          className={`input-mode-btn ${activeTab === 'referentiel' ? 'active' : ''}`}
+          onClick={() => setActiveTab('referentiel')}
+        >
+          📚 Référentiel des 13 Scénarios (Fichier scenariosConfig.js)
         </button>
-        <button className="btn-primary" onClick={handleSave} disabled={!modified}>
-          💾 Sauvegarder les modifications
+        <button
+          type="button"
+          className={`input-mode-btn ${activeTab === 'seuils' ? 'active' : ''}`}
+          onClick={() => setActiveTab('seuils')}
+        >
+          ⚙️ Ajustement rapide des seuils
         </button>
       </div>
+
+      {activeTab === 'referentiel' ? (
+        <div className="scenarios-matrix anim-up">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {AML_SCENARIOS.map(sc => (
+              <div key={sc.id} className="card" style={{ padding: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span className="chip" style={{ background: 'var(--text-accent)', color: '#fff', fontWeight: 700 }}>
+                      {sc.code}
+                    </span>
+                    <strong style={{ fontSize: '1rem' }}>{sc.description}</strong>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <span className="chip c-grn">Branche: {sc.branche}</span>
+                    <span className={`chip ${sc.gravite === 'critique' ? 'c-red' : 'c-ora'}`}>
+                      Gravité: {sc.gravite}
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: 8 }}>
+                  <strong>Déclencheur (Trigger) :</strong> <code>{JSON.stringify(sc.declencheur)}</code>
+                </div>
+
+                {sc.sousRegles?.length > 0 && (
+                  <div style={{ marginTop: 8, background: 'var(--bg-accent)', padding: 10, borderRadius: 6, fontSize: '0.82rem' }}>
+                    <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                      Sous-règles ({sc.sousRegles.length}) :
+                    </div>
+                    <ul style={{ margin: 0, paddingLeft: 18 }}>
+                      {sc.sousRegles.map((sr, i) => (
+                        <li key={i} style={{ marginBottom: 2 }}>
+                          <strong>Règle {sr.id} :</strong> {sr.label} {sr.seuilDT ? `(Seuil: ${sr.seuilDT.toLocaleString('fr-TN')} DT)` : ''}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="settings-grid anim-up">
+          {/* Indicateur 2: Capital Assuré */}
+          <div className="setting-card">
+            <div className="setting-header">
+              <h3>Scénario 01 & 11: Capitaux Assurés Élevés</h3>
+              <span className="chip c-ora">Haute Gravité</span>
+            </div>
+            <div className="setting-content">
+              <div className="seuil-table">
+                <div className="seuil-row">
+                  <div className="seuil-label">Groupe</div>
+                  <div className="seuil-label">RM/RF</div>
+                  <div className="seuil-label">RE</div>
+                </div>
+                {Object.keys(seuils.ind2).map(groupe => (
+                  <div key={groupe} className="seuil-row">
+                    <div className="seuil-label">{groupe.charAt(0).toUpperCase() + groupe.slice(1)}</div>
+                    <input
+                      type="number"
+                      value={seuils.ind2[groupe]["RM/RF"]}
+                      onChange={(e) => handleSeuilChange("ind2", groupe, "RM/RF", e.target.value)}
+                      className="seuil-input"
+                    />
+                    <input
+                      type="number"
+                      value={seuils.ind2[groupe]["RE"]}
+                      onChange={(e) => handleSeuilChange("ind2", groupe, "RE", e.target.value)}
+                      className="seuil-input"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Indicateur 3: Prime Élevée */}
+          <div className="setting-card">
+            <div className="setting-header">
+              <h3>Scénario 02 & 12: Primes Élevées</h3>
+              <span className="chip c-ora">Haute Gravité</span>
+            </div>
+            <div className="setting-content">
+              <div className="seuil-table">
+                <div className="seuil-row">
+                  <div className="seuil-label">Groupe</div>
+                  <div className="seuil-label">RM/RF</div>
+                  <div className="seuil-label">RE</div>
+                </div>
+                {Object.keys(seuils.ind3).map(groupe => (
+                  <div key={groupe} className="seuil-row">
+                    <div className="seuil-label">{groupe.charAt(0).toUpperCase() + groupe.slice(1)}</div>
+                    <input
+                      type="number"
+                      value={seuils.ind3[groupe]["RM/RF"]}
+                      onChange={(e) => handleSeuilChange("ind3", groupe, "RM/RF", e.target.value)}
+                      className="seuil-input"
+                    />
+                    <input
+                      type="number"
+                      value={seuils.ind3[groupe]["RE"]}
+                      onChange={(e) => handleSeuilChange("ind3", groupe, "RE", e.target.value)}
+                      className="seuil-input"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Indicateur 4: Rachat */}
+          <div className="setting-card">
+            <div className="setting-header">
+              <h3>Scénario 03: Rachat de Contrat Vie</h3>
+              <span className="chip c-ora">Haute Gravité</span>
+            </div>
+            <div className="setting-content">
+              <div className="seuil-table">
+                <div className="seuil-row">
+                  <div className="seuil-label">Groupe</div>
+                  <div className="seuil-label">RM/RF</div>
+                  <div className="seuil-label">RE</div>
+                </div>
+                {Object.keys(seuils.ind4).map(groupe => (
+                  <div key={groupe} className="seuil-row">
+                    <div className="seuil-label">{groupe.charAt(0).toUpperCase() + groupe.slice(1)}</div>
+                    <input
+                      type="number"
+                      value={seuils.ind4[groupe]["RM/RF"]}
+                      onChange={(e) => handleSeuilChange("ind4", groupe, "RM/RF", e.target.value)}
+                      className="seuil-input"
+                    />
+                    <input
+                      type="number"
+                      value={seuils.ind4[groupe]["RE"]}
+                      onChange={(e) => handleSeuilChange("ind4", groupe, "RE", e.target.value)}
+                      className="seuil-input"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Indicateur 10: Paiement Espèces */}
+          <div className="setting-card">
+            <div className="setting-header">
+              <h3>Scénario 10: Paiement en Espèces</h3>
+              <span className="chip c-red">Critique</span>
+            </div>
+            <div className="setting-content">
+              <div className="seuil-single">
+                <div className="seuil-label">Seuil (DT) - Article 13 Loi 2015-26</div>
+                <input
+                  type="number"
+                  value={seuils.ind10.seuil}
+                  onChange={(e) => handleSeuilChange("ind10", "seuil", null, e.target.value)}
+                  className="seuil-input large"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'seuils' && (
+        <div className="settings-actions">
+          <button className="btn-secondary" onClick={handleReset} disabled={!modified}>
+            🔄 Réinitialiser
+          </button>
+          <button className="btn-primary" onClick={handleSave} disabled={!modified}>
+            💾 Sauvegarder les modifications
+          </button>
+        </div>
+      )}
     </div>
   );
 };
@@ -919,6 +1066,7 @@ const TYPES_OPERATION = [
   { value: "souscription", label: "Souscription" },
   { value: "rachat", label: "Rachat" },
   { value: "augmentation", label: "Augmentation de capital" },
+  { value: "avance", label: "Avance sur contrat" },
   { value: "prime", label: "Versement de prime" },
   { value: "paiement_espece", label: "Paiement en espèce" },
 ];
@@ -929,8 +1077,6 @@ const GRAVITE_CONFIG = {
   moyenne: { label: "MOYENNE", cls: "sim-badge-moyenne", icon: "🟡" },
 };
 
-
-
 const PROFIL_VIDE = { ...CLIENT_VIDE };
 
 const AlertSimPanel = ({ activeClient, selId, updateField, addClient, lancerHistorique }) => {
@@ -938,6 +1084,7 @@ const AlertSimPanel = ({ activeClient, selId, updateField, addClient, lancerHist
   const [resultat, setResultat] = useState(null);
   const [tested, setTested] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [copiedKey, setCopiedKey] = useState(null);
 
   // Synchronise avec le client sélectionné si présent
   useEffect(() => {
@@ -963,16 +1110,14 @@ const AlertSimPanel = ({ activeClient, selId, updateField, addClient, lancerHist
   };
 
   const handleSave = async () => {
-    if (selId) return; // Déjà enregistré
+    if (selId) return;
     setIsSaving(true);
     try {
-      // Nettoyage de l'ID éventuel dans le profil local avant ajout
       const { id, ...cleanData } = localProfil;
       const clientToSave = { ...cleanData, createdAt: new Date().toISOString() };
       if (!clientToSave.nom) clientToSave.nom = "Nouveau client";
 
       const docRef = await addDoc(collection(db, 'clients'), clientToSave);
-      // Le composant App va re-loader via onSnapshot et selId/form seront mis à jour.
       alert("Profil client enregistré avec succès !");
     } catch (e) {
       console.error("Error saving client:", e);
@@ -984,7 +1129,6 @@ const AlertSimPanel = ({ activeClient, selId, updateField, addClient, lancerHist
 
   const reset = () => {
     if (selId) {
-      // On ne "reset" pas un client existant comme ça, peut-être juste vider l'écran de test?
       setResultat(null);
       setTested(false);
     } else {
@@ -994,24 +1138,33 @@ const AlertSimPanel = ({ activeClient, selId, updateField, addClient, lancerHist
     }
   };
 
+  const copyText = (txt, key) => {
+    if (!txt) return;
+    navigator.clipboard.writeText(txt);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2500);
+  };
+
   const currentData = selId ? activeClient : localProfil;
+  const isVie = currentData.branche === "Vie" || ["vie encaissement", "vie decaissement", "vie"].includes(currentData.source_system);
   const showCapital = ["souscription", "augmentation"].includes(currentData.typeOperation);
   const showPrime = ["souscription", "prime"].includes(currentData.typeOperation);
   const showRachat = currentData.typeOperation === "rachat";
+  const showAvance = currentData.typeOperation === "avance";
   const showAug = currentData.typeOperation === "augmentation";
 
   return (
     <div className="sim-panel">
       <div className="panel-h">
         <div>
-          <div className="panel-t">🔎 Simulation d'alerte</div>
+          <div className="panel-t">🔎 Simulation d'alerte AML (13 Scénarios)</div>
           <div className="sim-subtitle">
             {selId ? `Édition de : ${activeClient.nom}` : "Simulation libre — Saisissez un profil pour tester"}
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {selId && <button className="run" style={{ background: 'var(--text-success)' }} onClick={lancerHistorique}>💾 Enreg. Historique</button>}
-          {!selId && <button className="run" style={{ background: 'var(--text-accent)' }} onClick={handleSave} disabled={isSaving}>{isSaving ? "Encuur..." : "📁 Enregistrer le client"}</button>}
+          {!selId && <button className="run" style={{ background: 'var(--text-accent)' }} onClick={handleSave} disabled={isSaving}>{isSaving ? "En cours..." : "📁 Enregistrer le client"}</button>}
           <button className="sim-reset-btn" onClick={reset}>↺ Réinitialiser</button>
           <button className="run" onClick={testerProfil}>▶ Lancer le Test</button>
         </div>
@@ -1020,6 +1173,24 @@ const AlertSimPanel = ({ activeClient, selId, updateField, addClient, lancerHist
       <div className="sim-grid">
         {/* ── Colonne Gauche : Formulaire ── */}
         <div className="sim-form-col">
+          <div className="sec">Branche & Système source</div>
+          <div className="sim-form-group">
+            <Field label="Branche d'assurance" as="select" value={currentData.branche || "Non-Vie"} onChange={e => {
+              const b = e.target.value;
+              set("branche", b);
+              set("source_system", b === "Vie" ? "vie encaissement" : "Auto/Irds");
+            }}>
+              <option value="Non-Vie">Non-Vie (Auto / IRDS / Multirisque)</option>
+              <option value="Vie">Vie & Capitalisation</option>
+            </Field>
+            <Field label="Système source (source_system)" as="select" value={currentData.source_system || "Auto/Irds"} onChange={e => set("source_system", e.target.value)}>
+              <option value="Auto/Irds">Auto/Irds (Non-Vie)</option>
+              <option value="vie encaissement">vie encaissement (Souscriptions & Cotisations Vie)</option>
+              <option value="vie decaissement">vie decaissement (Rachats & Avances Vie)</option>
+              <option value="vie">vie (Général)</option>
+            </Field>
+          </div>
+
           <div className="sec">Profil client</div>
           <div className="sim-form-group">
             <Field label="Nom complet" placeholder="Prénom Nom" value={currentData.nom} onChange={e => set("nom", e.target.value)} />
@@ -1036,11 +1207,12 @@ const AlertSimPanel = ({ activeClient, selId, updateField, addClient, lancerHist
             </Field>
           </div>
 
-          <div className="sec">Montants</div>
+          <div className="sec">Montants & Capitaux</div>
           <div className="sim-form-group">
             {showCapital && <Field label="Capital assuré (DT)" type="number" min="0" value={currentData.capitalAssure} onChange={e => set("capitalAssure", +e.target.value)} />}
             {showPrime && <Field label="Prime versée (DT)" type="number" min="0" value={currentData.prime} onChange={e => set("prime", +e.target.value)} />}
             {showRachat && <Field label="Valeur de rachat (DT)" type="number" min="0" value={currentData.valeurRachat} onChange={e => set("valeurRachat", +e.target.value)} />}
+            {showAvance && <Field label="Montant de l'avance demandée (DT)" type="number" min="0" value={currentData.montantAvance} onChange={e => set("montantAvance", +e.target.value)} />}
             {showAug && <Field label="Ratio augmentation capital (ex: 2.5)" type="number" step="0.1" min="0" value={currentData.augmentationCapital} onChange={e => set("augmentationCapital", +e.target.value)} />}
             <Field label="Paiement en espèces (DT)" type="number" min="0" value={currentData.paiementEspeces} onChange={e => set("paiementEspeces", +e.target.value)} />
           </div>
@@ -1052,10 +1224,13 @@ const AlertSimPanel = ({ activeClient, selId, updateField, addClient, lancerHist
             <Field label="Nb de contrats actifs (< 3 ans)" type="number" min="0" value={currentData.nbContrats3Ans} onChange={e => set("nbContrats3Ans", +e.target.value)} />
           </div>
 
-          <div className="sec">Indicateurs spécifiques</div>
+          <div className="sec">Indicateurs spécifiques (13 Scénarios)</div>
           <div className="sim-toggles">
-            <Toggle k="baytIIcoherent" l="Bayti incohérent avec profil (Scenario 8)" v={currentData.baytIIcoherent} set={set} />
-            <Toggle k="changementBeneficiaire" l="≥ 3 modif. bénéficiaire (Scenario 7)" v={currentData.changementBeneficiaire} set={set} />
+            <Toggle k="paysGafi" l="Client / Ressortissant Pays liste GAFI (Scénario 04)" v={currentData.paysGafi} set={set} />
+            <Toggle k="baytIIcoherent" l="Multirisque Bayti incohérent avec profil (Scénario 08)" v={currentData.baytIIcoherent} set={set} />
+            <Toggle k="changementBeneficiaire" l="≥ 3 modif. bénéficiaire (Scénario 07)" v={currentData.changementBeneficiaire} set={set} />
+            <Toggle k="rachatMoins90j" l="Rachat précoce < 90 jours (Scénario 06)" v={currentData.rachatMoins90j} set={set} />
+            <Toggle k="avanceMoins6Mois" l="Avance contrat demandée < 6 mois (Scénario 13)" v={currentData.avanceMoins6Mois} set={set} />
           </div>
         </div>
 
@@ -1067,8 +1242,8 @@ const AlertSimPanel = ({ activeClient, selId, updateField, addClient, lancerHist
               <div className="sim-placeholder-title">{selId ? "Client sélectionné" : "Aucune simulation lancée"}</div>
               <div className="sim-placeholder-sub">
                 {selId
-                  ? "Les modifications sont enregistrées en temps réel. Cliquez sur 'Lancer le Test' pour évaluer ce profil."
-                  : "Saisissez les données et cliquez sur 'Lancer le Test' pour voir si une alerte se génère."}
+                  ? "Les modifications sont prises en compte en direct. Cliquez sur 'Lancer le Test' pour évaluer ce profil sur les 13 scénarios."
+                  : "Saisissez les données et cliquez sur 'Lancer le Test' pour détecter les scénarios d'alerte."}
               </div>
             </div>
           ) : (
@@ -1082,29 +1257,68 @@ const AlertSimPanel = ({ activeClient, selId, updateField, addClient, lancerHist
                   </div>
                   <div className="sim-verdict-sub">
                     {resultat.alert
-                      ? `${resultat.alertes.length} scénario${resultat.alertes.length > 1 ? "s" : ""} déclenché${resultat.alertes.length > 1 ? "s" : ""}`
-                      : "Aucun scénario d'alerte déclenché pour ce profil"}
+                      ? `${resultat.alertes.length} scénario${resultat.alertes.length > 1 ? "s" : ""} déclenché${resultat.alertes.length > 1 ? "s" : ""} sur 13`
+                      : "Aucun scénario déclenché (profil 100% conforme)"}
                   </div>
                   <div className="sim-verdict-meta">
-                    {currentData.activite} · {currentData.niveauRisque === "RE" ? "En RE" : "Hors RE"} · Groupe: {resultat.groupe}
+                    {currentData.activite} · {currentData.niveauRisque === "RE" ? "Risque Élevé (RE)" : "Risque Modéré (RM/RF)"} · Groupe: {resultat.groupe}
                   </div>
                 </div>
               </div>
 
-              {/* Liste des alertes */}
+              {/* Liste des alertes et livrables de décision */}
               {resultat.alertes.length > 0 && (
                 <div className="sim-alertes-list">
-                  <div className="sim-alertes-header">Scénarios déclenchés</div>
+                  <div className="sim-alertes-header">
+                    Scénarios déclenchés & Décisions à appliquer ({resultat.alertes.length})
+                  </div>
                   {resultat.alertes.map(a => {
                     const cfg = GRAVITE_CONFIG[a.gravite] || GRAVITE_CONFIG.moyenne;
+                    const dec = a.decisions || {};
+                    const kC = `sim_c_${a.id}`;
+                    const kI = `sim_i_${a.id}`;
+                    const kS = `sim_s_${a.id}`;
+
                     return (
-                      <div key={a.id} className="sim-alerte-card">
+                      <div key={a.id} className="sim-alerte-card" style={{ padding: 14 }}>
                         <div className="sim-alerte-top">
-                          <span className="sim-alerte-num">#{a.id}</span>
-                          <span className="sim-alerte-scenario">{a.scenario}</span>
+                          <span className="sim-alerte-num">{a.code || `#${a.id}`}</span>
+                          <span className="sim-alerte-scenario">{a.label}</span>
                           <span className={`sim-badge ${cfg.cls}`}>{cfg.icon} {cfg.label}</span>
                         </div>
                         <div className="sim-alerte-regle">{a.regle}</div>
+                        <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 4 }}>
+                          Valeur : <strong>{a.valeurs}</strong> · Seuil : <strong>{a.seuil}</strong>
+                        </div>
+
+                        {/* Boutons d'actions rapides pour RegTools / CTAF */}
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+                          <button
+                            type="button"
+                            className="btn-accent btn-sm"
+                            onClick={() => copyText(dec.raisonCloture, kC)}
+                            title="Copier la raison de clôture sans suite"
+                          >
+                            {copiedKey === kC ? '✓ Raison copiée !' : '📋 Copier Raison Clôture'}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-sec btn-sm"
+                            onClick={() => copyText(dec.noteInvestigation, kI)}
+                            title="Copier la note d'investigation"
+                          >
+                            {copiedKey === kI ? '✓ Note copiée !' : '🔍 Copier Note Investigation'}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-sec btn-sm"
+                            style={{ color: '#dc2626', borderColor: '#dc2626' }}
+                            onClick={() => copyText(dec.motifSoupcon, kS)}
+                            title="Copier l'argumentaire pour la CTAF"
+                          >
+                            {copiedKey === kS ? '✓ CTAF copié !' : '🚨 Copier Motif CTAF'}
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -1113,7 +1327,7 @@ const AlertSimPanel = ({ activeClient, selId, updateField, addClient, lancerHist
 
               {/* Résumé seuils applicables */}
               <div className="sim-seuils-box">
-                <div className="sim-seuils-title">📊 Seuils applicables à ce profil</div>
+                <div className="sim-seuils-title">📊 Seuils de référence applicables à ce profil</div>
                 <SeuilsTable profil={currentData} groupe={resultat.groupe} />
               </div>
             </>

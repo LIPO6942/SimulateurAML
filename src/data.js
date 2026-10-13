@@ -7,19 +7,27 @@ export const CLIENT_VIDE = {
   activite: "salarié",
   niveauRisque: "RM/RF",
   typeOperation: "souscription",
+  branche: "Non-Vie",
+  source_system: "Auto/Irds",
   capitalAssure: 0,
   prime: 0,
   valeurRachat: 0,
   augmentationCapital: 0,
+  capitalAssureVie: 0,
+  primesVieTotales: 0,
+  montantAvance: 0,
+  avanceMoins6Mois: false,
+  nbAvances12Mois: 0,
   dateSouscription: "",
   dateOperation: "",
   nbContrats3Ans: 0,
   changementBeneficiaire: false,
+  nbChangementsBeneficiaire: 0,
   baytIIcoherent: false,
   paiementEspeces: 0,
-  paysGafi: false, // Legacy fallback
-  rachatMoins90j: false, // Legacy fallback
-  souscriptionsMultiples: false, // Legacy fallback
+  paysGafi: false,
+  rachatMoins90j: false,
+  souscriptionsMultiples: false,
 };
 
 export const EXEMPLES_CLIENTS = [

@@ -2281,4 +2281,39 @@ body {
 .preview-chip strong {
     color: var(--text-primary);
 }
+
+/* ─── STYLES BOUTONS ET CARTES 13 SCÉNARIOS AML ─────────────────────────── */
+.btn-sm {
+    padding: 5px 10px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+}
+
+.sim-alerte-card {
+    background: var(--bg-sec);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    margin-bottom: 12px;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sim-alerte-card:hover {
+    border-color: var(--text-accent);
+}
+
+.scenarios-matrix .card {
+    background: var(--bg-sec);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    transition: border-color 0.2s ease;
+}
+
+.scenarios-matrix .card:hover {
+    border-color: var(--text-accent);
+}
+
 
