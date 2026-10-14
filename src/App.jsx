@@ -839,7 +839,7 @@ const SettingsPanel = () => {
         `;
       }).join('');
 
-      const html = \`<!DOCTYPE html>
+      const html = `<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
@@ -869,7 +869,7 @@ const SettingsPanel = () => {
       <div class="hdr-s">Dispositif de Surveillance LCB-FT / RegTools & Matrice des 13 Scénarios Réglementaires</div>
     </div>
     <div style="text-align:right;">
-      <span class="badge-d">Date d'édition : \${new Date().toLocaleDateString('fr-TN')}</span>
+      <span class="badge-d">Date d'édition : ${new Date().toLocaleDateString('fr-TN')}</span>
       <div style="font-size:9px;color:#64748b;margin-top:4px;">13 Branches & Sous-produits intégrés</div>
     </div>
   </div>
@@ -887,7 +887,7 @@ const SettingsPanel = () => {
       </tr>
     </thead>
     <tbody>
-      \${rowsHtml}
+      ${rowsHtml}
     </tbody>
   </table>
 
@@ -904,7 +904,7 @@ const SettingsPanel = () => {
     };
   </script>
 </body>
-</html>\`;
+</html>`;
 
       printWindow.document.open();
       printWindow.document.write(html);
