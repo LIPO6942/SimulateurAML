@@ -450,6 +450,8 @@ const Sidebar = ({ clients, selId, selectClient, addClient, deleteClient, getDot
           if (k === 'lib_cie') obj.LIB_CIE = String(val).trim();
           if (k === 'n_bra') obj.N_BRA = String(val).trim();
           if (k === 'lib_branche' || k === 'lib_bran') obj.LIB_BRANCHE = String(val).trim();
+          if (k === 'c_produit' || k === 'code_produit' || k === 'n_produit') obj.C_PRODUIT = String(val).trim();
+          if (k === 'lib_produit' || k === 'produit' || k === 'nom_produit') obj.LIB_PRODUIT = String(val).trim();
 
           // 2. Sociétaire & KYC
           if (k === 'nom' || k === 'nom_adh') obj.nom = val;
@@ -706,11 +708,13 @@ const ResultPanel = ({ results, client, riskScore }) => {
                       <button
                         type="button"
                         className="btn-sec btn-sm"
-                        style={{ color: '#dc2626', borderColor: '#dc2626' }}
+                        style={dec.doitDeclarer ? { color: '#dc2626', borderColor: '#dc2626' } : { color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)', background: 'rgba(16, 185, 129, 0.08)' }}
                         onClick={() => copyText(dec.motifSoupcon, kSoupcon)}
-                        title="Copier l'argumentaire pour la CTAF"
+                        title={dec.doitDeclarer ? "Copier l'argumentaire pour la CTAF" : "Copier la mention : Il n'y a pas lieu de déclarer"}
                       >
-                        {copiedKey === kSoupcon ? '✓ CTAF copié !' : '🚨 Copier Motif CTAF'}
+                        {copiedKey === kSoupcon
+                          ? (dec.doitDeclarer ? '✓ CTAF copié !' : '✓ Mention copiée !')
+                          : (dec.doitDeclarer ? '🚨 Copier Motif CTAF' : '🛡️ Pas de déclaration CTAF')}
                       </button>
                     </div>
                   </div>
@@ -1640,11 +1644,13 @@ const AlertSimPanel = ({ activeClient, selId, updateField, addClient, lancerHist
                           <button
                             type="button"
                             className="btn-sec btn-sm"
-                            style={{ color: '#dc2626', borderColor: '#dc2626' }}
+                            style={dec.doitDeclarer ? { color: '#dc2626', borderColor: '#dc2626' } : { color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)', background: 'rgba(16, 185, 129, 0.08)' }}
                             onClick={() => copyText(dec.motifSoupcon, kS)}
-                            title="Copier l'argumentaire pour la CTAF"
+                            title={dec.doitDeclarer ? "Copier l'argumentaire pour la CTAF" : "Copier la mention : Il n'y a pas lieu de déclarer"}
                           >
-                            {copiedKey === kS ? '✓ CTAF copié !' : '🚨 Copier Motif CTAF'}
+                            {copiedKey === kS
+                              ? (dec.doitDeclarer ? '✓ CTAF copié !' : '✓ Mention copiée !')
+                              : (dec.doitDeclarer ? '🚨 Copier Motif CTAF' : '🛡️ Pas de déclaration CTAF')}
                           </button>
                         </div>
                       </div>

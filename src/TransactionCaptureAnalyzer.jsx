@@ -460,6 +460,11 @@ export default function TransactionCaptureAnalyzer() {
               <div className="quick-preview-chips">
                 <span className="preview-chip">👤 Sociétaire: <strong>{extractedFields.NOM_ADH || "N/A"}</strong></span>
                 <span className="preview-chip">💼 Profession: <strong>{extractedFields.LIB_PROF || "N/A"}</strong></span>
+                {result?.analyse?.produit_contracte && (
+                  <span className="preview-chip" style={{ borderColor: 'var(--accent-color)', background: 'rgba(59, 130, 246, 0.1)' }}>
+                    📦 Produit: <strong>{result.analyse.produit_contracte}</strong>
+                  </span>
+                )}
                 <span className="preview-chip">💰 Prime: <strong>{result?.analyse?.montant_converti_tnd || (extractedFields.PRIME_ENCAIS ? extractedFields.PRIME_ENCAIS + ' millimes' : "N/A")}</strong></span>
                 <span className="preview-chip">💳 Mode: <strong>{String(extractedFields.M) === "1" ? "Espèces (M=1)" : "Autre"}</strong></span>
                 <span className="preview-chip">📑 Police: <strong>{extractedFields.N_POLICE || "N/A"}</strong></span>
@@ -688,28 +693,59 @@ export default function TransactionCaptureAnalyzer() {
             </div>
 
             {/* CARTE 3 : DÉCLARATION DE SOUPÇON (CTAF / goAML) */}
-            <div className="copy-card card highlight-card" style={{ gridColumn: '1 / -1' }}>
-              <div className="copy-card-header">
-                <div>
-                  <div className="target-field-tag" style={{ background: 'rgba(220, 38, 38, 0.15)', color: '#dc2626', borderColor: '#dc2626' }}>
-                    Signalement CTAF / goAML : Article 20 Loi n°2015-26
+            {(() => {
+              const doitDeclarer = analyse.doit_declarer_ctaf === true || analyse.decision === "DECLARATION_SOUPCON";
+              const defaultNonDeclarer = `Il n'y a pas lieu de déclarer pour ce cas.\n\nLes vérifications de conformité et l'analyse KYC ont écarté tout soupçon de blanchiment de capitaux ou de financement du terrorisme (LCB-FT). L'opération sur le produit contracté${analyse.produit_contracte ? ' (' + analyse.produit_contracte + ')' : ''} présente une justification économique avérée et ne requiert aucune transmission de déclaration de soupçon à la CTAF (Article 20 de la Loi n°2015-26).`;
+              const texteAAfficher = (!doitDeclarer && (!analyse.motif_soupcon_goaml || analyse.motif_soupcon_goaml.startsWith("DÉCLARATION DE SOUPÇON")))
+                ? defaultNonDeclarer
+                : (analyse.motif_soupcon_goaml || defaultNonDeclarer);
+
+              return (
+                <div className="copy-card card highlight-card" style={{ gridColumn: '1 / -1' }}>
+                  <div className="copy-card-header">
+                    <div>
+                      <div
+                        className="target-field-tag"
+                        style={doitDeclarer ? {
+                          background: 'rgba(220, 38, 38, 0.15)',
+                          color: '#dc2626',
+                          borderColor: '#dc2626'
+                        } : {
+                          background: 'rgba(16, 185, 129, 0.15)',
+                          color: '#10b981',
+                          borderColor: '#10b981'
+                        }}
+                      >
+                        {doitDeclarer
+                          ? "Signalement CTAF / goAML : Article 20 Loi n°2015-26"
+                          : "Contrôle CTAF / goAML : Aucune déclaration requise"}
+                      </div>
+                      <h3 className="copy-card-title">
+                        {doitDeclarer
+                          ? "🚨 Déclaration de Soupçon (DS / CTAF)"
+                          : "🛡️ Déclaration de Soupçon (DS / CTAF) : Non applicable"}
+                      </h3>
+                      <p className="copy-card-desc">
+                        {doitDeclarer
+                          ? "Argumentaire juridique et motifs de suspicion pour transmission à la CTAF"
+                          : "Il n'y a pas lieu de déclarer pour ce cas — Dossier conforme / soupçon écarté"}
+                      </p>
+                    </div>
+                    <button
+                      className={`copy-action-btn ${copiedField === 'soupcon' ? 'copied' : ''}`}
+                      onClick={() => copyToClipboard(texteAAfficher, 'soupcon')}
+                    >
+                      {copiedField === 'soupcon'
+                        ? (doitDeclarer ? '✓ Soupçon copié !' : '✓ Mention copiée !')
+                        : (doitDeclarer ? "📋 Copier l'Argumentaire CTAF" : "📋 Copier la mention")}
+                    </button>
                   </div>
-                  <h3 className="copy-card-title">🚨 Déclaration de Soupçon (DS / CTAF)</h3>
-                  <p className="copy-card-desc">
-                    Argumentaire juridique et motifs de suspicion pour transmission à la CTAF
-                  </p>
+                  <div className="copy-text-box note-box" style={!doitDeclarer ? { borderLeft: '3px solid #10b981' } : {}}>
+                    <pre>{texteAAfficher}</pre>
+                  </div>
                 </div>
-                <button
-                  className={`copy-action-btn ${copiedField === 'soupcon' ? 'copied' : ''}`}
-                  onClick={() => copyToClipboard(analyse.motif_soupcon_goaml || analyse.raison_cloture_regtools, 'soupcon')}
-                >
-                  {copiedField === 'soupcon' ? '✓ Soupçon copié !' : '📋 Copier l\'Argumentaire CTAF'}
-                </button>
-              </div>
-              <div className="copy-text-box note-box">
-                <pre>{analyse.motif_soupcon_goaml || "Aucun motif de soupçon immédiat caractérisé. Dossier conforme."}</pre>
-              </div>
-            </div>
+              );
+            })()}
           </div>
 
           {/* DÉTAILS DE L'ANALYSE DE COHÉRENCE */}

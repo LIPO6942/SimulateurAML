@@ -121,6 +121,7 @@ export function calculateRiskScore(indicators) {
  * 3) Motif et argumentaire de déclaration de soupçon (CTAF / goAML)
  */
 export function generateDecisionsForScenario(scenario, matchInfo, client) {
+  const productInfo = resolveProductInfo(client);
   const nom = client.nom ? `${client.prenom ? client.prenom + ' ' : ''}${client.nom}` : "Sociétaire";
   const profession = client.activite || client.LIB_PROF || "Salarié";
   const risque = client.niveauRisque || "RM/RF";
@@ -133,6 +134,10 @@ export function generateDecisionsForScenario(scenario, matchInfo, client) {
     risque,
     police,
     agence,
+    produit: productInfo.nomProduit,
+    codeProduit: productInfo.codeProduit,
+    libelleProduit: productInfo.libelleComplet,
+    branche: productInfo.nomBranche,
     pays: client.pays || "Tunisie",
     valeurFmt: matchInfo.valeurFmt || `${matchInfo.valeur} TND`,
     valeurBienFmt: client.valeurBien ? `${client.valeurBien.toLocaleString('fr-TN')} TND` : null,
@@ -140,34 +145,44 @@ export function generateDecisionsForScenario(scenario, matchInfo, client) {
     matchRule: matchInfo.rule
   };
 
-  // 1. Raison de clôture (RegTools)
+  // 1. Raison de clôture (RegTools) - concise et mentionnant le produit contracté
   const raisonCloture = scenario.motifClotureTemplate
     ? scenario.motifClotureTemplate(data, matchInfo.rule || {})
-    : `Dossier analysé pour le scénario ${scenario.description}. Profil socio-économique (${profession}) et justification documentaire vérifiés. Clôture sans suite.`;
+    : `Contrat ${data.produit} : dossier vérifié pour ${scenario.description}. Profil sociétaire (${profession}) et justification documentaire conformes sans anomalie LCB-FT. Clôture sans suite.`;
 
-  // 2. Note d'investigation (RegTools)
+  // 2. Note d'investigation (RegTools) - détaillée avec produit contracté
   const noteInvestigation = scenario.noteInvestigationTemplate
     ? scenario.noteInvestigationTemplate(data, matchInfo.rule || {})
-    : `1. OBJET DU CONTRÔLE : Alerte sur ${scenario.description}.\n2. ANALYSE KYC : ${nom} (${profession}), risque ${risque}.\n3. DILIGENCES : Collecter les pièces justificatives complémentaires auprès de l'agence ${agence}.`;
+    : `1. OBJET DU CONTRÔLE & PRODUIT : Alerte sur le contrat ${data.libelleProduit || data.produit} (Police n°${police}, Agence ${agence}) au titre du scénario ${scenario.description}.\n2. ANALYSE KYC : ${nom} (${profession}), risque ${risque}.\n3. DILIGENCES : Contrôle documentaire et conformité des garanties souscrites au titre du produit ${data.produit}.`;
 
-  // 3. Déclaration de soupçon (CTAF / goAML / CNLCT)
-  const motifSoupcon = `DÉCLARATION DE SOUPÇON (Réf: CTAF - Loi n°2015-26 & Règlement CGA n°2019-02)
+  // 3. Déclaration de soupçon (CTAF / goAML)
+  // S'il n'y a pas lieu de déclarer (clôture ou faux positif), afficher explicitement la mention requise
+  const doitDeclarer = client.decision === "DECLARATION_SOUPCON" || client.doitDeclarer === true;
+
+  const motifSoupcon = doitDeclarer
+    ? `DÉCLARATION DE SOUPÇON (Réf: CTAF - Loi n°2015-26 & Règlement CGA n°2019-02)
 
 1. EXPOSÉ FACTUEL :
-Le client ${nom}, exerçant la profession de ${profession} (profil de risque: ${risque}), a initié une opération sur le contrat n°${police} (Agence ${agence}) déclenchant le scénario réglementaire "${scenario.description}".
+Le sociétaire ${nom}, exerçant la profession de ${profession} (profil de risque: ${risque}), a initié une opération sur le contrat ${data.libelleProduit || data.produit} n°${police} (Agence ${agence}) déclenchant le scénario réglementaire "${scenario.description}".
 Montant / Donnée constatée : ${data.valeurFmt}.
 
 2. ANALYSE DU SOUPÇON & INCOHÉRENCES KYC :
-- Incompatibilité caractérisée entre la surface financière apparente du souscripteur et l'importance économique de l'opération.
+- Incompatibilité caractérisée entre la surface financière apparente du souscripteur et l'importance économique de l'opération sur le produit ${data.produit}.
 - Anomalie de comportement au regard des typologies de blanchiment d'argent dans le secteur des assurances (contournement des seuils, absence de justification probante de l'origine économique des fonds, risque de prête-nom).
 
 3. QUALIFICATION JURIDIQUE & RECOMMANDATION :
-En application de l'article 20 de la Loi organique n°2015-26 modifiée par la loi 2019-09, transmission immédiate d'une Déclaration de Soupçon (DS) à la Commission Tunisienne des Analyses Financières (CTAF) pour examen approfondi des flux financiers.`;
+En application de l'article 20 de la Loi organique n°2015-26 modifiée par la loi 2019-09, transmission immédiate d'une Déclaration de Soupçon (DS) à la Commission Tunisienne des Analyses Financières (CTAF) pour examen approfondi des flux financiers.`
+    : `Il n'y a pas lieu de déclarer pour ce cas.
+
+Les vérifications de conformité et l'analyse KYC ont écarté tout soupçon de blanchiment de capitaux ou de financement du terrorisme (LCB-FT). L'opération sur le contrat ${data.libelleProduit || data.produit} présente une justification économique avérée et ne relève d'aucune obligation de déclaration de soupçon au titre de l'article 20 de la Loi n°2015-26.`;
 
   return {
     raisonCloture,
     noteInvestigation,
-    motifSoupcon
+    motifSoupcon,
+    produitContracte: data.produit,
+    codeProduit: data.codeProduit,
+    doitDeclarer
   };
 }
 
@@ -477,6 +492,111 @@ export function detectBranchAndSystem(profile = {}) {
 
   // Par défaut Non-Vie / Auto/Irds
   return { code: "A", nom: "Non-Vie / Auto/IRDS", branche: "Non-Vie", source_system: "Auto/Irds", isVie: false, isHabitation: false, isNonVieIrds: true };
+}
+
+/**
+ * Résolution précise du produit contracté à partir du mapping (C_BR, N_CIE, C_PRODUIT, LIB_CIE, LIB_BRANCHE, etc.)
+ */
+export function resolveProductInfo(profile = {}) {
+  const cBr = (profile.C_BR || profile.c_br || "").toUpperCase().trim();
+  const nCie = String(profile.N_CIE ?? profile.n_cie ?? "").trim();
+  const cProd = String(profile.C_PRODUIT ?? profile.c_produit ?? profile.CODE_PRODUIT ?? profile.code_produit ?? profile.N_PRODUIT ?? profile.n_produit ?? "").trim();
+  const libCie = (profile.LIB_CIE || profile.lib_cie || "").toUpperCase().trim();
+  const libBranche = (profile.LIB_BRANCHE || profile.LIB_BRAN || profile.lib_branche || "").toUpperCase().trim();
+  const libProduit = (profile.LIB_PRODUIT || profile.lib_produit || profile.PRODUIT || profile.produit || "").trim();
+
+  // 1. Recherche directe par code compagnie / produit (N_CIE ou C_PRODUIT) dans toutes les branches
+  const searchCode = cProd || nCie;
+  if (searchCode) {
+    for (const b of Object.values(BRANCHES_MAPPING)) {
+      const matchedCie = b.cies?.find(c => String(c.n_cie).trim() === searchCode);
+      if (matchedCie) {
+        let formula = "";
+        if (typeof matchedCie.lib_branche === "string") {
+          formula = matchedCie.lib_branche;
+        } else if (Array.isArray(matchedCie.lib_branches)) {
+          formula = matchedCie.lib_branches[0];
+        }
+        const nomProduit = formula ? `${b.nom.split('(')[0].trim()} (${formula})` : (matchedCie.lib_cie || b.nom);
+        return {
+          codeProduit: searchCode,
+          codeBranche: b.code,
+          nomProduit: nomProduit,
+          libelleComplet: `${b.nom.split('(')[0].trim()} - ${formula || matchedCie.lib_cie} (Code ${searchCode})`,
+          nomBranche: b.nom,
+          branche: b.branche,
+          source_system: b.source_system
+        };
+      }
+    }
+  }
+
+  // 2. Si un libellé produit explicite est fourni
+  if (libProduit) {
+    const branchInfo = detectBranchAndSystem(profile);
+    return {
+      codeProduit: searchCode || branchInfo.code,
+      codeBranche: branchInfo.code,
+      nomProduit: libProduit,
+      libelleComplet: `${libProduit}${searchCode ? ` (Code ${searchCode})` : ''}`,
+      nomBranche: branchInfo.nom,
+      branche: branchInfo.branche,
+      source_system: branchInfo.source_system
+    };
+  }
+
+  // 3. Recherche par LIB_CIE ou LIB_BRANCHE dans les cies
+  if (libCie || libBranche) {
+    for (const b of Object.values(BRANCHES_MAPPING)) {
+      for (const cie of (b.cies || [])) {
+        const cieMatch = libCie && cie.lib_cie && (cie.lib_cie.toUpperCase().includes(libCie) || libCie.includes(cie.lib_cie.toUpperCase()));
+        let branchMatch = false;
+        let matchedFormula = "";
+        if (libBranche) {
+          if (typeof cie.lib_branche === "string" && (cie.lib_branche.toUpperCase().includes(libBranche) || libBranche.includes(cie.lib_branche.toUpperCase()))) {
+            branchMatch = true;
+            matchedFormula = cie.lib_branche;
+          } else if (Array.isArray(cie.lib_branches)) {
+            const found = cie.lib_branches.find(lb => lb.toUpperCase().includes(libBranche) || libBranche.includes(lb.toUpperCase()));
+            if (found) {
+              branchMatch = true;
+              matchedFormula = found;
+            }
+          }
+        }
+        if (cieMatch || branchMatch) {
+          const formula = matchedFormula || (typeof cie.lib_branche === 'string' ? cie.lib_branche : cie.lib_cie);
+          const nomProduit = formula ? `${b.nom.split('(')[0].trim()} (${formula})` : b.nom;
+          return {
+            codeProduit: cie.n_cie || searchCode || b.code,
+            codeBranche: b.code,
+            nomProduit: nomProduit,
+            libelleComplet: `${b.nom.split('(')[0].trim()} - ${formula} (Réf. ${cie.n_cie})`,
+            nomBranche: b.nom,
+            branche: b.branche,
+            source_system: b.source_system
+          };
+        }
+      }
+    }
+  }
+
+  // 4. Détection par branche générale via detectBranchAndSystem
+  const branchInfo = detectBranchAndSystem(profile);
+  const branchName = branchInfo.nom ? branchInfo.nom.split('(')[0].trim() : "Assurance";
+  const defaultCie = BRANCHES_MAPPING[branchInfo.code]?.cies?.[0];
+  const defaultFormula = defaultCie ? (typeof defaultCie.lib_branche === 'string' ? defaultCie.lib_branche : defaultCie.lib_cie) : "";
+  const nomProduit = defaultFormula ? `${branchName} (${defaultFormula})` : branchName;
+
+  return {
+    codeProduit: searchCode || (defaultCie ? defaultCie.n_cie : branchInfo.code),
+    codeBranche: branchInfo.code,
+    nomProduit: nomProduit,
+    libelleComplet: `${nomProduit}${searchCode ? ` (Code ${searchCode})` : ''}`,
+    nomBranche: branchInfo.nom,
+    branche: branchInfo.branche,
+    source_system: branchInfo.source_system
+  };
 }
 
 /**

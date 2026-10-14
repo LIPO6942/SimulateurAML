@@ -1,4 +1,4 @@
-import { checkAlert, AML_SCENARIOS, getGroupe, detectBranchAndSystem } from './engine.js';
+import { checkAlert, AML_SCENARIOS, getGroupe, detectBranchAndSystem, resolveProductInfo } from './engine.js';
 
 // ─── GROQ AI SERVICE — Smart-AML Decision Support ──────────────────────────
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
@@ -167,14 +167,16 @@ const VISION_SYSTEM_PROMPT = `Tu es l'analyste principal LCB-FT / AML de la MAE 
 
 Ta mission est d'analyser une capture d'écran d'une transaction ou alerte AML (comme la modal "Infos supplémentaires" ou l'écran d'alerte RegTools) et de :
 1. Extraire rigoureusement toutes les informations textuelles et valeurs du tableau (CLE / VALEUR).
-2. Déterminer si l'alerte nécessite REELLEMENT une investigation ou s'il s'agit d'une opération légitime justifiant une clôture sans suite (Levée de doute).
-3. Rédiger le texte précis pour le champ obligatoire "Raison" de RegTools (2-3 phrases claires et techniques).
-4. Rédiger la "Note d'investigation" formelle pour RegTools, prête à être collée dans la section Investigation.
+2. Identifier le PRODUIT CONTRACTÉ de l'assuré (déduit de N_CIE, C_PRODUIT, C_BR, LIB_CIE, ex: "Habitation Beyti (Formule Essentielle)", "Automobile Mono", etc.).
+3. Déterminer si l'alerte nécessite RÉELLEMENT une investigation ou si elle justifie une clôture sans suite (Levée de doute).
+4. Rédiger la "Raison de clôture" pour le champ obligatoire 'Raison *' de RegTools : OBLIGATOIREMENT COURTE (1 à 2 phrases directes maximum), mentionnant le PRODUIT CONTRACTÉ du sociétaire, et se terminant par 'Clôture sans suite.'
+5. Rédiger la "Note d'investigation" formelle pour RegTools, structurée et mentionnant le PRODUIT CONTRACTÉ.
+6. Renseigner le champ "motif_soupcon_goaml" : s'il n'y a pas lieu de déclarer (cas de clôture sans suite ou faux positif), afficher STRICTEMENT : "Il n'y a pas lieu de déclarer pour ce cas." accompagné d'une brève confirmation de levée de doute. Si un soupçon réel est caractérisé, rédiger l'argumentaire juridique complet pour la CTAF.
 
 Règles d'évaluation AML pour le secteur assurances :
 - Seuil de paiement en espèces : 5 000 TND (5 000 000 millimes). Au-delà, une alerte est levée (M = 1 = Espèces).
-- Cohérence socio-économique : Si le client est médecin (cabinet), profession libérale ou chef d'entreprise avec revenus élevés, et que la prime (ex: ~5 500 DT) est proportionnelle à la valeur du véhicule assuré (ex: ~120 000 DT, ratio ~4-5%), et contrat ancien (> 1 an) -> Levée de doute légitime, Clôture justifiée.
-- Si le client est sans profession, étudiant, ou incohérence flagrante -> Investigation requise / Demande d'attestation de provenance des fonds.
+- Cohérence socio-économique : Si le client est taxi, artisan, médecin ou profession libérale avec revenus cohérents, ou sous les seuils -> Levée de doute légitime, Clôture justifiée.
+- Si le client est sans profession, étudiant, ou incohérence flagrante -> Investigation requise.
 
 Format de réponse JSON STRICT (sans aucun autre texte) :
 {
@@ -189,6 +191,8 @@ Format de réponse JSON STRICT (sans aucun autre texte) :
     "V_CIN": "",
     "AGENCE": "",
     "N_POLICE": "",
+    "N_CIE": "",
+    "C_BR": "",
     "EFF_POL": "",
     "FIN_POL": "",
     "VAL_VENTE": "",
@@ -205,17 +209,19 @@ Format de réponse JSON STRICT (sans aucun autre texte) :
     "decision": "CLOTURE_SANS_SUITE" | "INVESTIGATION_REQUISE" | "DECLARATION_SOUPCON",
     "statut_recommande_regtools": "Clôturé" | "Investigation",
     "niveau_risque": "FAIBLE" | "MOYEN" | "ELEVE",
-    "regle_declenchee": "Paiement en espèce (> 5 000 DT)",
-    "montant_converti_tnd": "5 579.024 DT",
-    "mode_paiement_libelle": "Espèces",
+    "produit_contracte": "Nom du produit contracté identifié",
+    "doit_declarer_ctaf": false,
+    "regle_declenchee": "Règlement sous le seuil d'espèces (< 5 000 DT)",
+    "montant_converti_tnd": "70.416 TND",
+    "mode_paiement_libelle": "Espèces (M=1)",
     "coherence_socio_economique": "Excellente" | "Douteuse" | "Incohérente",
     "points_analyse": [
       "Point 1...",
-      "Point 2...",
-      "Point 3..."
+      "Point 2..."
     ],
-    "raison_cloture_regtools": "Texte court et précis pour le champ rouge obligatoire 'Raison *'...",
-    "note_investigation_regtools": "Texte complet structuré pour la boîte 'Investigation'..."
+    "raison_cloture_regtools": "Contrat [Produit] : texte court (1-2 phrases) mentionnant le produit contracté. Clôture sans suite.",
+    "note_investigation_regtools": "1. OBJET DU CONTRÔLE & PRODUIT : Contrat [Produit]...\n2. ANALYSE KYC...",
+    "motif_soupcon_goaml": "Il n'y a pas lieu de déclarer pour ce cas."
   }
 }`;
 
@@ -561,9 +567,10 @@ export function evaluateTransactionLocally(rawFields = {}) {
     const statutContrat = (rawFields.STATUT_CON || "").toLowerCase();
     const cStatut = rawFields.CSTATUT || "2";
 
-    // Détection automatique de la branche et du système source (A, B, C, I, M, N, G, E)
+    // Détection automatique du produit contracté et de la branche
+    const productInfo = resolveProductInfo(rawFields);
     const branchDetected = detectBranchAndSystem(rawFields);
-    const sourceSystem = rawFields.source_system || branchDetected.source_system || "Auto/Irds";
+    const sourceSystem = rawFields.source_system || productInfo.source_system || branchDetected.source_system || "Auto/Irds";
 
     // Traitement du montant (millimes vs Dinars)
     const montantDinars = parseMontantTnd(rawFields.PRIME_ENCAIS ?? rawFields.montant, 70.416);
@@ -593,12 +600,16 @@ export function evaluateTransactionLocally(rawFields = {}) {
         prenom: "",
         activite: prof,
         LIB_PROF: prof,
-        C_BR: rawFields.C_BR || rawFields.c_br || branchDetected.code,
-        N_CIE: rawFields.N_CIE || rawFields.n_cie,
+        C_BR: rawFields.C_BR || rawFields.c_br || productInfo.codeBranche,
+        N_CIE: rawFields.N_CIE || rawFields.n_cie || productInfo.codeProduit,
+        C_PRODUIT: rawFields.C_PRODUIT || rawFields.c_produit || productInfo.codeProduit,
         LIB_CIE: rawFields.LIB_CIE || rawFields.lib_cie,
         N_BRA: rawFields.N_BRA || rawFields.n_bra,
         LIB_BRANCHE: rawFields.LIB_BRANCHE || rawFields.LIB_BRAN || rawFields.lib_branche,
-        branche: branchDetected.branche,
+        LIB_PRODUIT: productInfo.nomProduit,
+        produit: productInfo.nomProduit,
+        produitInfo: productInfo,
+        branche: productInfo.branche,
         source_system: sourceSystem,
         typeOperation: "souscription",
         capitalAssure: parseMontantTnd(rawFields.MAX_CAP || rawFields.VAL_VENTE, 0),
@@ -641,14 +652,14 @@ export function evaluateTransactionLocally(rawFields = {}) {
             ? `Scénario 10: Paiement en espèces > 5 000 DT (${montantFmt})`
             : `Montant atypique pour profil sans revenu connu (${montantFmt})`;
         points = [
-            `Règlement au comptant de ${montantFmt}${montantMillimesStr} pour un profil sans profession ou étudiant.`,
+            `Règlement au comptant de ${montantFmt}${montantMillimesStr} pour le produit ${productInfo.nomProduit} (profil sans profession ou étudiant).`,
             `Incohérence manifeste : profil déclaré (${prof}) incompatible avec le règlement d'une telle prime.`,
             `Origine des fonds non documentée : suspicion d'interposition de tiers ou de prêt de nom.`,
             `Vérification documentaire requise : demander une attestation de provenance des fonds et pièce KYC actualisée.`
         ];
-        raisonCloture = `Règlement de ${montantFmt} pour un client au profil déclaré sans revenu (${prof}). Origine des fonds à documenter, ouverture d'un dossier d'investigation en agence ${agence}.`;
-        noteInvestigation = `1. DÉCLENCHEUR DU CONTRÔLE :
-Alerte sur la quittance n°${quittance} d'un montant de ${montantFmt} (Police n°${police}, Agence ${agence}). Mode de règlement : ${mode}.
+        raisonCloture = `Contrat ${productInfo.nomProduit} : règlement de ${montantFmt} atypique pour un sociétaire déclaré sans revenu (${prof}). Origine des fonds à documenter, ouverture d'un dossier d'investigation en agence ${agence}.`;
+        noteInvestigation = `1. OBJET DU CONTRÔLE & PRODUIT :
+Alerte sur la quittance n°${quittance} du contrat ${productInfo.libelleComplet} (Police n°${police}, Agence ${agence}) d'un montant de ${montantFmt}. Mode de règlement : ${mode}.
 
 2. ANALYSE DU PROFIL CLIENT & KYC :
 Sociétaire : ${titre} ${nom} (CIN: ${cin}).
@@ -656,7 +667,7 @@ Profession enregistrée : ${prof}.
 Le profil socio-économique déclaré ne présente pas une surface financière apparente justifiant l'utilisation d'un tel montant en liquidités.
 
 3. MOTIFS DE SUSPICION & RED FLAGS :
-- Incompatibilité entre le statut socio-professionnel et le montant de la prime.
+- Incompatibilité entre le statut socio-professionnel et le montant de la prime souscrite au titre du produit ${productInfo.nomProduit}.
 - Absence de justification de la provenance des liquidités.
 - Risque potentiel d'utilisation du contrat d'assurance à des fins de dissimulation.
 
@@ -665,7 +676,7 @@ Investigation approfondie requise. Dossier maintenu en cours d'instruction. Dema
 
         motifSoupcon = `DÉCLARATION DE SOUPÇON (Réf: CTAF - Article 20 Loi n°2015-26)
 Sociétaire : ${nom} (${prof})
-Contrat : ${police} - Quittance : ${quittance} (${montantFmt})
+Contrat : ${productInfo.libelleComplet} - Police n°${police} - Quittance : ${quittance} (${montantFmt})
 Motif : Règlements en espèces importants pour une personne sans ressources régulières déclarées. Risque élevé de prêt de nom ou de dissimulation de capitaux d'origine illicite. Déclaration transmise à la CTAF.`;
 
     } else if (isTaxiOrTransport || (!depasseSeuilCash && montantDinars <= 5000)) {
@@ -677,10 +688,11 @@ Motif : Règlements en espèces importants pour une personne sans ressources ré
         regleDeclenchee = `Règlement sous le seuil d'espèces (${montantFmt} < 5 000 DT)`;
 
         const mentionContrat = statutContrat.includes("suspend") || cStatut === "2"
-            ? `Le statut de contrat suspendu (CSTATUT ${cStatut}) correspond à une régularisation de quittance ou de terme en agence (Agence ${agence}), sans implication LCB-FT.`
+            ? `Le statut de contrat suspendu (CSTATUT ${cStatut}) correspond à une régularisation ordinaire de quittance en agence (Agence ${agence}), sans implication LCB-FT.`
             : `Contrat régulièrement en cours (Police n°${police}).`;
 
         points = [
+            `Produit contracté identifié : ${productInfo.nomProduit} (${productInfo.nomBranche}).`,
             `Règlement de ${montantFmt}${montantMillimesStr} strictement INFÉRIEUR au seuil légal d'espèces de 5 000 DT (Loi n°2015-26 & Lignes directrices CGA).`,
             `Cohérence socio-économique : Sociétaire ${titre} ${nom}, exerçant l'activité de ${prof} (C_PROF ${rawFields.C_PROF || '55'}), dont le modèle économique génère couramment des règlements au comptant.`,
             `Proportionnalité de la prime : montant modique de ${montantFmt} pour une valeur déclarée de ${valBienFmt}.`,
@@ -688,26 +700,30 @@ Motif : Règlements en espèces importants pour une personne sans ressources ré
             `Absence totale d'anomalie AML : aucun fractionnement, absence de profil PEP/PPE, levée de doute complète.`
         ];
 
-        raisonCloture = `Règlement de ${montantFmt} strictement inférieur au seuil réglementaire de 5 000 DT (Loi 2015-26). Profil socio-économique cohérent (${prof}, sociétaire ${nom}, Agence ${agence}). Aucun risque LCB-FT identifié, clôture sans suite.`;
+        // Raison de clôture concise et mentionnant le produit contracté
+        raisonCloture = `Contrat ${productInfo.nomProduit} (Police n°${police}) : encaissement de ${montantFmt} conforme et sous le seuil d'espèces (Loi 2015-26). Profil client (${prof}) et activité vérifiés sans anomalie LCB-FT. Clôture sans suite.`;
 
-        noteInvestigation = `1. OBJET DU CONTRÔLE :
-Examen du contrôle RegTools sur la quittance n°${quittance} relative à la police n°${police} (Agence ${agence}), pour un encaissement au comptant de ${montantFmt}${montantMillimesStr} le ${effQuit}.
+        noteInvestigation = `1. OBJET DU CONTRÔLE & PRODUIT :
+Examen du contrôle RegTools sur la quittance n°${quittance} relative au contrat ${productInfo.libelleComplet} (Police n°${police}, Agence ${agence}), pour un encaissement au comptant de ${montantFmt}${montantMillimesStr} le ${effQuit}.
 
 2. ANALYSE KYC & PROFIL SOCIO-PROFESSIONNEL :
 - Sociétaire : ${titre} ${nom} (CIN: ${cin}${rawFields.V_CIN ? ', ' + rawFields.V_CIN : ''}, né le ${rawFields.DT_NAISS || 'N/A'}).
 - Profession enregistrée : ${prof} (Code profession : ${rawFields.C_PROF || '55'}).
 - Risque client : Risque Faible. L'activité déclarée génère régulièrement des encaissements en espèces usuels.
 
-3. CONTRÔLE RÉGLEMENTAIRE & RESPECT DES SEUILS :
+3. CONTRÔLE DU PRODUIT & RESPECT DES SEUILS :
+- Produit contracté : ${productInfo.nomProduit} (${productInfo.nomBranche}).
 - Respect du seuil espèces : La prime réglée s'élève à ${montantFmt}, très largement en dessous du seuil d'interdiction légal de 5 000 TND (Loi n°2015-26 et règlement CGA n°2019-02).
 - Statut du contrat : ${statutContrat ? 'Statut ' + statutContrat.toUpperCase() : 'En vigueur'}${cStatut ? ' (Code ' + cStatut + ')' : ''}. Le règlement correspond à une régularisation ordinaire de quittance en agence.
 - Absence d'anomalie : Aucun fractionnement, sociétaire non répertorié sur les listes de sanctions, absence d'opération atypique.
 
 4. CONCLUSION DE CONFORMITÉ (LEVÉE DE DOUTE) :
-L'opération présente une parfaite légitimité économique. Aucun indice de blanchiment de capitaux ou de financement du terrorisme n'est caractérisé.
+L'opération présente une parfaite légitimité économique au titre du produit ${productInfo.nomProduit}. Aucun indice de blanchiment de capitaux ou de financement du terrorisme n'est caractérisé.
 Dossier classé sans suite, statut recommandé dans RegTools : Clôturé.`;
 
-        motifSoupcon = `Aucun soupçon caractérisé. Les opérations sont conformes aux dispositions de la Loi n°2015-26. Pas de déclaration nécessaire.`;
+        motifSoupcon = `Il n'y a pas lieu de déclarer pour ce cas.
+
+Les vérifications de conformité et l'analyse KYC ont écarté tout soupçon de blanchiment de capitaux ou de financement du terrorisme (LCB-FT). L'opération sur le produit contracté (${productInfo.nomProduit}) est sous les seuils réglementaires et parfaitement cohérente avec l'activité du sociétaire. Aucune déclaration CTAF requise (Article 20 de la Loi n°2015-26).`;
 
     } else {
         // CAS 2 : Montant > 5 000 DT avec profession établie (ex: Médecin, Cadre, Profession libérale)
@@ -717,15 +733,18 @@ Dossier classé sans suite, statut recommandé dans RegTools : Clôturé.`;
         coherence = "Excellente";
         regleDeclenchee = `Scénario 10: Paiement en espèces supérieur à 5 000 DT (M=1, ${montantFmt})`;
         points = [
+            `Produit contracté identifié : ${productInfo.nomProduit} (${productInfo.nomBranche}).`,
             `Règle déclenchée : Paiement en espèces de ${montantFmt} dépassant le seuil de 5 000 DT (M = 1).`,
             `Cohérence socio-professionnelle : Sociétaire ${titre} ${nom}, exerçant la profession de ${prof}, générant une surface financière en parfaite adéquation avec la prime.`,
             `Proportionnalité de la prime : ${montantFmt} pour une valeur déclarée de ${valBienFmt} (ratio de ~${ratio.toFixed(1)}%, conforme aux barèmes du secteur).`,
             `Stabilité contractuelle : Relation d'affaires pérenne (Police n°${police} active depuis le ${effPol}).`,
             `Absence d'anomalie LCB-FT : Pas de fractionnement, absence de profil PEP/PPE, sociétaire sans antécédent défavorable.`
         ];
-        raisonCloture = `Dépassement du seuil espèces (${montantFmt}) justifié par le profil socio-professionnel (${prof}), la proportionnalité de la prime par rapport au bien (${valBienFmt}) et l'antériorité du contrat (${effPol}). Risque faible, clôture sans suite.`;
-        noteInvestigation = `1. OBJET DU CONTRÔLE :
-Examen de l'alerte "Paiement en espèce" déclenchée sur la quittance n°${quittance} relative au contrat n°${police} (Agence ${agence}), pour un encaissement au comptant de ${montantFmt} le ${effQuit}.
+        // Raison de clôture concise et mentionnant le produit contracté
+        raisonCloture = `Contrat ${productInfo.nomProduit} (Police n°${police}) : dépassement d'espèces (${montantFmt}) justifié par l'assise financière du sociétaire (${prof}) et la valeur du risque (${valBienFmt}). Risque faible, clôture sans suite.`;
+        
+        noteInvestigation = `1. OBJET DU CONTRÔLE & PRODUIT :
+Examen de l'alerte "Paiement en espèce" déclenchée sur la quittance n°${quittance} relative au contrat ${productInfo.libelleComplet} (Police n°${police}, Agence ${agence}), pour un encaissement au comptant de ${montantFmt} le ${effQuit}.
 
 2. ANALYSE KYC ET PROFIL SOCIO-ÉCONOMIQUE :
 - Sociétaire : ${titre} ${nom} (CIN: ${cin}${rawFields.V_CIN ? ', ' + rawFields.V_CIN : ''}).
@@ -734,15 +753,18 @@ Examen de l'alerte "Paiement en espèce" déclenchée sur la quittance n°${quit
 Le sociétaire dispose d'une assise financière régulière et documentée compatible avec les primes acquittées.
 
 3. PROPORTIONNALITÉ ET NATURE DU RISQUE ASSURÉ :
-- Bien / Véhicule garanti : Immatriculation ${rawFields.IMMAT || 'N/A'}, valeur déclarée de ${valBienFmt}.
+- Produit contracté : ${productInfo.nomProduit} (${productInfo.nomBranche}).
+- Bien garanti : Immatriculation ${rawFields.IMMAT || 'N/A'}, valeur déclarée de ${valBienFmt}.
 - Ratio prime/valeur : ${ratio.toFixed(2)} %, ce qui correspond au tarif d'usage du secteur.
 - Historique : Police souscrite le ${effPol}, attestant d'une relation d'affaires suivie et stable.
 
 4. CONCLUSION DE CONFORMITÉ (LEVÉE DE DOUTE) :
-Les éléments recueillis attestent de la légitimité économique de l'opération. L'opération ne présente aucun indice de blanchiment de capitaux, de fractionnement ou de dissimulation de fonds.
+Les éléments recueillis attestent de la légitimité économique de l'opération au titre du produit ${productInfo.nomProduit}. L'opération ne présente aucun indice de blanchiment de capitaux, de fractionnement ou de dissimulation de fonds.
 Dossier classé sans suite, maintien du sociétaire en Risque Faible et clôture de l'alerte sur RegTools.`;
 
-        motifSoupcon = `Dépassement formel du seuil espèces sous-tendu par une assise économique vérifiée (${prof}). Absence de soupçon de blanchiment. Clôture interne sans déclaration CTAF.`;
+        motifSoupcon = `Il n'y a pas lieu de déclarer pour ce cas.
+
+Les vérifications de conformité et l'analyse KYC ont écarté tout soupçon de blanchiment de capitaux ou de financement du terrorisme (LCB-FT). L'encaissement sur le contrat ${productInfo.nomProduit} est justifié par l'assise financière et l'activité documentée du sociétaire. Aucune déclaration CTAF requise.`;
     }
 
     // Si une alerte spécifique des 13 scénarios a fourni des templates dédiés
@@ -750,7 +772,19 @@ Dossier classé sans suite, maintien du sociétaire en Risque Faible et clôture
         const topDec = triggeredAlerts[0].decisions;
         if (topDec.raisonCloture) raisonCloture = topDec.raisonCloture;
         if (topDec.noteInvestigation) noteInvestigation = topDec.noteInvestigation;
-        if (topDec.motifSoupcon) motifSoupcon = topDec.motifSoupcon;
+        
+        // S'il n'y a pas lieu de déclarer (clôture recommandée ou faux positif), afficher explicitement qu'il n'y a pas lieu de déclarer
+        if (decision === "CLOTURE_SANS_SUITE" || !topDec.doitDeclarer) {
+            motifSoupcon = `Il n'y a pas lieu de déclarer pour ce cas.
+
+Les vérifications de conformité et l'analyse KYC ont écarté tout soupçon de blanchiment de capitaux ou de financement du terrorisme (LCB-FT). L'opération sur le produit contracté (${productInfo.nomProduit}) présente une justification économique avérée et ne relève d'aucune obligation de déclaration de soupçon au titre de l'article 20 de la Loi n°2015-26.`;
+        } else if (topDec.motifSoupcon) {
+            motifSoupcon = topDec.motifSoupcon;
+        }
+    } else if (decision === "CLOTURE_SANS_SUITE") {
+        motifSoupcon = `Il n'y a pas lieu de déclarer pour ce cas.
+
+Les vérifications de conformité et l'analyse KYC ont écarté tout soupçon de blanchiment de capitaux ou de financement du terrorisme (LCB-FT). L'opération sur le produit contracté (${productInfo.nomProduit}) présente une justification économique avérée et ne relève d'aucune obligation de déclaration de soupçon au titre de l'article 20 de la Loi n°2015-26.`;
     }
 
     return {
@@ -783,6 +817,9 @@ Dossier classé sans suite, maintien du sociétaire en Risque Faible et clôture
             decision,
             statut_recommande_regtools: statutRegTools,
             niveau_risque: niveauRisque,
+            produit_contracte: productInfo.nomProduit,
+            produit_info: productInfo,
+            doit_declarer_ctaf: decision === "DECLARATION_SOUPCON",
             regle_declenchee: regleDeclenchee,
             montant_converti_tnd: montantFmt,
             mode_paiement_libelle: mode,

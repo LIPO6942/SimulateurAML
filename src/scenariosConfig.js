@@ -65,9 +65,9 @@ export const AML_SCENARIOS = [
       { id: 8, groupe: "groupe4", risqueEleve: true, seuilMillimes: 200000000, seuilDT: 200000, label: "G4 (Chef d'ent./Prof. lib.) - Risque Élevé" },
     ],
     motifClotureTemplate: (data, rule) =>
-      `Capitaux garantis (${data.valeurFmt}) conformes à la valeur vénale du bien/véhicule déclaré (${data.valeurBienFmt || 'justifiée sur facture/expertise'}). Profil client vérifié (${data.profession}), solvabilité avérée et adéquation du risque sans anomalie LCB-FT. Clôture sans suite.`,
+      `Contrat ${data.produit} : capitaux garantis (${data.valeurFmt}) conformes à la valeur vénale déclarée (${data.valeurBienFmt || 'justifiée sur dossier'}). Profil client (${data.profession}) et solvabilité vérifiés sans anomalie LCB-FT. Clôture sans suite.`,
     noteInvestigationTemplate: (data, rule) =>
-      `1. DÉCLENCHEUR : Somme des capitaux assurés Non-Vie (${data.valeurFmt}) excédant le seuil réglementaire de ${rule.seuilDT.toLocaleString('fr-TN')} DT pour la catégorie ${rule.label}.\n2. ANALYSE KYC : Sociétaire ${data.nom} (${data.profession}), risque ${data.risque}.\n3. POINTS DE CONTRÔLE : Contrôle de la réalité du bien assuré, cohérence de la facture d'achat ou du rapport d'expert. Justification requise auprès de l'agence de souscription.`
+      `1. OBJET DU CONTRÔLE & PRODUIT : Examen sur le contrat ${data.libelleProduit || data.produit} (Police n°${data.police}, Agence ${data.agence}).\n2. DÉCLENCHEUR : Somme des capitaux assurés Non-Vie (${data.valeurFmt}) excédant le seuil de ${rule.seuilDT.toLocaleString('fr-TN')} DT pour la catégorie ${rule.label}.\n3. ANALYSE KYC : Sociétaire ${data.nom} (${data.profession}), risque ${data.risque}.\n4. POINTS DE CONTRÔLE : Contrôle de la réalité du bien assuré et adéquation des garanties au titre du produit ${data.produit}. Aucune anomalie LCB-FT.`
   },
   {
     id: 2,
@@ -95,9 +95,9 @@ export const AML_SCENARIOS = [
       { id: 8, groupe: "groupe4", risqueEleve: true, seuilMillimes: 3000000, seuilDT: 3000, label: "G4 - Risque Élevé" },
     ],
     motifClotureTemplate: (data, rule) =>
-      `Prime émise de ${data.valeurFmt} strictement conforme au tarif d'usage et barème technique (garanties souscrites). Mode de règlement bancaire ou justifié, capacité financière du souscripteur (${data.profession}) proportionnée. Levée de doute confirmée.`,
+      `Contrat ${data.produit} : prime émise (${data.valeurFmt}) conforme au tarif technique des garanties souscrites. Profil client (${data.profession}) et capacité financière vérifiés. Clôture sans suite.`,
     noteInvestigationTemplate: (data, rule) =>
-      `1. DÉCLENCHEUR : Prime Non-Vie de ${data.valeurFmt} excédant le seuil de ${rule.seuilDT.toLocaleString('fr-TN')} DT.\n2. ANALYSE : Cohérence des revenus déclarés avec le paiement de la prime. Vérification du mode d'encaissement et des antécédents de quittances impayées.`
+      `1. OBJET DU CONTRÔLE & PRODUIT : Quittance émise sur le contrat ${data.libelleProduit || data.produit} (Police n°${data.police}, Agence ${data.agence}).\n2. DÉCLENCHEUR : Prime Non-Vie de ${data.valeurFmt} excédant le seuil de ${rule.seuilDT.toLocaleString('fr-TN')} DT.\n3. ANALYSE KYC : Cohérence des revenus déclarés (${data.profession}) avec le paiement de la prime pour le produit ${data.produit}. Mode d'encaissement régulier.`
   },
   {
     id: 3,
@@ -126,9 +126,9 @@ export const AML_SCENARIOS = [
       { id: 8, groupe: "groupe4", risqueEleve: true, seuilMillimes: 50000000, seuilDT: 50000, label: "G4 - Risque Élevé" },
     ],
     motifClotureTemplate: (data, rule) =>
-      `Demande de rachat de ${data.valeurFmt} sur contrat épargne vie avec antériorité d'épargne avérée. Virement effectué sur le compte bancaire propre du sociétaire, origine des primes initiales tracée. Clôture sans suite.`,
+      `Contrat ${data.produit} : rachat de ${data.valeurFmt} avec antériorité d'épargne avérée. Virement bancaire sur compte propre de ${data.nom}. Clôture sans suite.`,
     noteInvestigationTemplate: (data, rule) =>
-      `1. DÉCLENCHEUR : Rachat sur contrat d'assurance vie de ${data.valeurFmt} supérieur au seuil de ${rule.seuilDT.toLocaleString('fr-TN')} DT.\n2. ANALYSE : Ancienneté du contrat, motif du rachat (besoin de trésorerie, acquisition), vérification du RIB bénéficiaire et historique des primes versées.`
+      `1. OBJET DU CONTRÔLE & PRODUIT : Rachat sur contrat d'assurance vie ${data.libelleProduit || data.produit} (Police n°${data.police}, Agence ${data.agence}).\n2. DÉCLENCHEUR : Rachat de ${data.valeurFmt} supérieur au seuil de ${rule.seuilDT.toLocaleString('fr-TN')} DT.\n3. ANALYSE KYC : Ancienneté du contrat, motif du rachat, RIB bénéficiaire vérifié et traçabilité des primes de ${data.produit}.`
   },
   {
     id: 4,
@@ -150,9 +150,9 @@ export const AML_SCENARIOS = [
       { id: 1, label: "Ressortissant ou résident d'un pays sous surveillance renforcée / liste noire du GAFI", seuilDT: 0 }
     ],
     motifClotureTemplate: (data) =>
-      `Client ressortissant/lié à ${data.pays || 'un pays à vigilance renforcée'}, mais résidence fiscale et activité économique établie en Tunisie de longue date. Vérification des sanctions internationales négative (gel des avoirs CNLCT / ONU vierge). Opération ordinaire justifiée.`,
+      `Contrat ${data.produit} : sociétaire lié à ${data.pays || 'pays sous vigilance'}, avec résidence fiscale et activité économique établies en Tunisie. Criblage sanctions négatif. Clôture sans suite.`,
     noteInvestigationTemplate: (data) =>
-      `1. DÉCLENCHEUR : Alerte critique GAFI / Pays à haut risque (${data.pays}).\n2. DILIGENCES RENFORCÉES REQUISES : Application de l'article 20 du règlement CGA n°2019-02 (Vigilance accrue). Vérification de l'ayant droit économique, de l'origine licite des fonds et de l'absence de statut PEP / PPE.`
+      `1. OBJET DU CONTRÔLE & PRODUIT : Souscription du produit ${data.libelleProduit || data.produit} (Police n°${data.police}, Agence ${data.agence}).\n2. DÉCLENCHEUR : Alerte GAFI / Pays à haut risque (${data.pays}).\n3. DILIGENCES RENFORCÉES : Application article 20 règlement CGA n°2019-02. Ayant droit économique vérifié, absence de statut PEP/PPE, criblage listes sanctions gel des avoirs négatif pour le contrat ${data.produit}.`
   },
   {
     id: 5,
@@ -175,9 +175,9 @@ export const AML_SCENARIOS = [
       { id: 2, risqueEleve: true, multiplicateur: 1.25, label: "Ratio capital > 1.25x Capital précédent (Risque Élevé)" }
     ],
     motifClotureTemplate: (data, rule) =>
-      `Avenant d'augmentation de capitaux (${data.valeurFmt}) motivé par l'évolution de la situation patrimoniale ou professionnelle (${data.profession}). Justificatifs d'épargne conformes, aucun versement atypique. Clôture de l'alerte.`,
+      `Contrat ${data.produit} : augmentation de capitaux (${data.valeurFmt}) motivée par l'évolution patrimoniale de ${data.nom} (${data.profession}). Justificatifs d'épargne conformes. Clôture sans suite.`,
     noteInvestigationTemplate: (data, rule) =>
-      `1. DÉCLENCHEUR : Augmentation substantielle de capitaux (ratio > x${rule.multiplicateur}).\n2. CONTRÔLE : Vérifier la provenance des nouveaux capitaux injectés et l'absence de structuration ou de dissimulation de plus-values illicites.`
+      `1. OBJET DU CONTRÔLE & PRODUIT : Avenant de capitaux sur le contrat ${data.libelleProduit || data.produit} (Police n°${data.police}).\n2. DÉCLENCHEUR : Augmentation substantielle de capitaux (ratio > x${rule.multiplicateur}).\n3. CONTRÔLE : Provenance des nouveaux capitaux injectés sur le produit ${data.produit} et absence d'anomalie LCB-FT.`
   },
   {
     id: 6,
@@ -199,9 +199,9 @@ export const AML_SCENARIOS = [
       { id: 1, seuilJours: 90, label: "Délai entre date de souscription et date de rachat < 90 jours" }
     ],
     motifClotureTemplate: (data) =>
-      `Rachat précoce demandé (${data.delai_jours || '< 90'} jours) motivé par un événement de force majeure documenté (licenciement, sinistre personnel, besoin impérieux de liquidité). Remboursement sur compte émetteur d'origine, pénalités de rachat appliquées.`,
+      `Contrat ${data.produit} : rachat précoce (${data.delai_jours || '< 90'} jours) motivé par un besoin urgent de liquidité documenté. Remboursement sur compte émetteur d'origine. Clôture sans suite.`,
     noteInvestigationTemplate: (data) =>
-      `1. DÉCLENCHEUR : Rachat total intervenu moins de 90 jours après la souscription (Typologie classique de blanchiment : placement puis retrait immédiat).\n2. INVESTIGATION : Exiger les justificatifs précis du motif de désengagement rapide et tracer l'historique complet des versements initiaux.`
+      `1. OBJET DU CONTRÔLE & PRODUIT : Rachat précoce sur contrat ${data.libelleProduit || data.produit} (Police n°${data.police}).\n2. DÉCLENCHEUR : Rachat total intervenu ${data.delai_jours || '< 90'} jours après souscription.\n3. INVESTIGATION : Justificatifs du motif de désengagement rapide sur le produit ${data.produit} et traçabilité des versements initiaux.`
   },
   {
     id: 7,
@@ -223,9 +223,9 @@ export const AML_SCENARIOS = [
       { id: 1, kpiName: "count_contract_last_modification_dateeqDatedencaissement_gt3", seuilCount: 3, label: "Plus de 3 modifications de bénéficiaire (KPI > 3)" }
     ],
     motifClotureTemplate: (data) =>
-      `Modifications successives de la clause bénéficiaire expliquées par des mutations familiales documentées (mariage, naissance, mise à jour des ayants droit). Lien de parenté vérifié, levée de doute opérée.`,
+      `Contrat ${data.produit} : changement de bénéficiaire justifié par mutation familiale documentée (état civil vérifié). Clôture sans suite.`,
     noteInvestigationTemplate: (data) =>
-      `1. DÉCLENCHEUR : Changements répétés de bénéficiaires (> 3 fois).\n2. MOTIF DE SUSPICION : Risque de transmission occulte de capitaux à des tiers non apparentés ou prête-noms.\n3. CONTRÔLE : Obtenir l'arbre généalogique et l'acte d'état civil justifiant chaque désignation.`
+      `1. OBJET DU CONTRÔLE & PRODUIT : Clause bénéficiaire du contrat ${data.libelleProduit || data.produit} (Police n°${data.police}).\n2. DÉCLENCHEUR : Changements successifs de bénéficiaire (> 3).\n3. CONTRÔLE : Examen des actes d'état civil justifiant chaque désignation au titre du produit ${data.produit}.`
   },
   {
     id: 8,
@@ -248,9 +248,9 @@ export const AML_SCENARIOS = [
       { id: 3, groupe: "groupe4", seuilMillimes: 1000000000, seuilDT: 1000000, label: "G4 (Chef d'entreprise / Prof libérale) : Capital > 1 000 000 DT" }
     ],
     motifClotureTemplate: (data, rule) =>
-      `Capital garanti multirisques habitation de ${data.valeurFmt} en adéquation avec la valeur vénale et d'expertise du bien immobilier (titre de propriété et métrage vérifiés). Revenus du foyer ou patrimoine familial cohérent. Clôture.`,
+      `Contrat ${data.produit} : capital garanti (${data.valeurFmt}) en adéquation avec la valeur vénale du bien immobilier (titre de propriété vérifié). Revenus du souscripteur (${data.profession}) cohérents. Clôture sans suite.`,
     noteInvestigationTemplate: (data, rule) =>
-      `1. DÉCLENCHEUR : Capital garanti multirisque (${data.valeurFmt}) disproportionné par rapport au statut professionnel (${data.profession}).\n2. VÉRIFICATIONS : Exiger le titre de propriété, le contrat d'acquisition ou l'expertise immobilière pour valider la réalité du bien.`
+      `1. OBJET DU CONTRÔLE & PRODUIT : Contrat multirisque habitation ${data.libelleProduit || data.produit} (Police n°${data.police}, Agence ${data.agence}).\n2. DÉCLENCHEUR : Capital garanti (${data.valeurFmt}) supérieur au seuil de ${rule.seuilDT.toLocaleString('fr-TN')} DT.\n3. CONTRÔLE : Titre de propriété et cohérence de l'expertise pour le logement couvert par le produit ${data.produit}.`
   },
   {
     id: 9,
@@ -271,9 +271,9 @@ export const AML_SCENARIOS = [
       { id: 1, seuilDureeAnnees: 3, seuilContrats: 3, label: "Souscription de multiples contrats de vie (≥ 3 contrats) dans un délai ≤ 3 ans" }
     ],
     motifClotureTemplate: (data) =>
-      `Multiplicité de souscriptions vie répondant à une stratégie d'épargne segmentée (objectifs distincts : études enfants, retraite, projet personnel). Capacité d'épargne globale vérifiée et conforme aux déclarations fiscales.`,
+      `Souscriptions multiples en ${data.produit} justifiées par une stratégie d'épargne segmentée (projets familiaux distincts). Solvabilité globale de ${data.nom} vérifiée. Clôture sans suite.`,
     noteInvestigationTemplate: (data) =>
-      `1. DÉCLENCHEUR : Multiplication des contrats vie sur une courte période (< 3 ans).\n2. MOTIF DE SUSPICION : Risque de fractionnement et d'émiettement de fonds pour contourner les seuils déclaratifs.\n3. CONTRÔLE : Calculer le cumul total des primes sur l'ensemble des polices actives.`
+      `1. OBJET DU CONTRÔLE & PRODUIT : Polices multiples souscrites en ${data.libelleProduit || data.produit} (≥ 3 contrats sur 3 ans).\n2. DÉCLENCHEUR : Multiplication des souscriptions vie sur court délai.\n3. CONTRÔLE : Cumul des primes et adéquation avec les capacités d'épargne réelles du sociétaire pour ${data.produit}.`
   },
   {
     id: 10,
@@ -301,9 +301,9 @@ export const AML_SCENARIOS = [
       }
     ],
     motifClotureTemplate: (data) =>
-      `Règlement de prime au comptant (${data.valeurFmt}) pour une activité (${data.profession}) générant légitimement des flux de trésorerie usuels. Absence de fractionnement suspect, montant en adéquation avec la valeur du risque assuré (${data.valeurBienFmt || 'véhicule/bien'}). Dossier régularisé sans suite.`,
+      `Contrat ${data.produit} : règlement en espèces (${data.valeurFmt}) cohérent avec l'activité déclarée (${data.profession}) et la valeur du risque. Absence de fractionnement suspect. Clôture sans suite.`,
     noteInvestigationTemplate: (data) =>
-      `1. DÉCLENCHEUR CRITIQUE : Paiement en liquidités de ${data.valeurFmt} dépassant le seuil légal de 5 000 DT (Article 13 de la Loi 2015-26 & Règlement CGA n°2019-02).\n2. CONTRÔLE RÉGLEMENTAIRE : Demander sans délai la justification de provenance des espèces (bordereau de retrait bancaire, acte de vente) et vérifier pourquoi le paiement n'a pas transité par chèque ou virement.`
+      `1. OBJET DU CONTRÔLE & PRODUIT : Encaissement au comptant sur contrat ${data.libelleProduit || data.produit} (Police n°${data.police}, Agence ${data.agence}).\n2. DÉCLENCHEUR : Paiement en liquidités de ${data.valeurFmt} (seuil légal 5 000 DT - Loi 2015-26).\n3. CONTRÔLE : Justification des espèces, cohérence avec la profession ${data.profession} et proportionnalité de la prime pour le produit ${data.produit}.`
   },
   {
     id: 11,
@@ -331,9 +331,9 @@ export const AML_SCENARIOS = [
       { id: 8, groupe: "groupe4", risqueEleve: true, seuilMillimes: 200000000, seuilDT: 200000, label: "G4 (Chef d'ent./Prof. lib.) - Risque Élevé" },
     ],
     motifClotureTemplate: (data, rule) =>
-      `Capital au terme de ${data.valeurFmt} sur contrat vie en parfaite adéquation avec la stratégie de transmission et les revenus de l'adhérent (${data.profession}). Origine des fonds tracée, clôture sans suite.`,
+      `Contrat ${data.produit} : capital au terme (${data.valeurFmt}) proportionné aux revenus de ${data.nom} (${data.profession}) et à l'objectif d'épargne/retraite. Clôture sans suite.`,
     noteInvestigationTemplate: (data, rule) =>
-      `1. DÉCLENCHEUR : Capital en fin de contrat vie de ${data.valeurFmt} supérieur au seuil de ${rule.seuilDT.toLocaleString('fr-TN')} DT.\n2. ANALYSE : Vérification de la solvabilité de l'adhérent et de la clause bénéficiaire.`
+      `1. OBJET DU CONTRÔLE & PRODUIT : Capitalisation / Épargne ${data.libelleProduit || data.produit} (Police n°${data.police}).\n2. DÉCLENCHEUR : Capital en fin de contrat de ${data.valeurFmt} supérieur au seuil de ${rule.seuilDT.toLocaleString('fr-TN')} DT.\n3. ANALYSE : Solvabilité de l'adhérent et conformité de la clause bénéficiaire sur le contrat ${data.produit}.`
   },
   {
     id: 12,
@@ -361,9 +361,9 @@ export const AML_SCENARIOS = [
       { id: 8, groupe: "groupe4", risqueEleve: true, seuilMillimes: 3000000, seuilDT: 3000, label: "G4 - Risque Élevé" },
     ],
     motifClotureTemplate: (data, rule) =>
-      `Primes cumulées versées sur le contrat vie (${data.valeurFmt}) en adéquation avec les flux déclarés et l'historique bancaire de ${data.nom} (${data.profession}). Levée de doute validée.`,
+      `Contrat ${data.produit} : primes cumulées versées (${data.valeurFmt}) proportionnées aux flux financiers et à l'activité de ${data.nom} (${data.profession}). Clôture sans suite.`,
     noteInvestigationTemplate: (data, rule) =>
-      `1. DÉCLENCHEUR : Primes versées en assurance vie (${data.valeurFmt}) excédant le seuil de ${rule.seuilDT.toLocaleString('fr-TN')} DT.\n2. VÉRIFICATION : Adéquation des versements avec l'avis d'imposition ou les états financiers.`
+      `1. OBJET DU CONTRÔLE & PRODUIT : Primes versées sur contrat ${data.libelleProduit || data.produit} (Police n°${data.police}).\n2. DÉCLENCHEUR : Primes cumulées de ${data.valeurFmt} excédant le seuil de ${rule.seuilDT.toLocaleString('fr-TN')} DT.\n3. CONTRÔLE : Adéquation des versements avec les justificatifs de revenus pour le produit ${data.produit}.`
   },
   {
     id: 13,
@@ -394,9 +394,9 @@ export const AML_SCENARIOS = [
       }
     ],
     motifClotureTemplate: (data) =>
-      `Avance sur police d'assurance vie (${data.valeurFmt}) souscrite sous convention d'avance légale avec taux d'intérêt réglementaire. Motif de trésorerie ponctuel justifié, remboursement prévu, sociétaire de premier ordre. Clôture de l'alerte.`,
+      `Contrat ${data.produit} : avance de ${data.valeurFmt} conforme aux dispositions contractuelles. Besoin de trésorerie ponctuel justifié, sociétaire régulier. Clôture sans suite.`,
     noteInvestigationTemplate: (data) =>
-      `1. DÉCLENCHEUR : Demande d'avance substantielle ou répétée sur contrat vie.\n2. RISQUE LCB-FT : L'avance peut être utilisée pour recycler des fonds sans liquider formellement le contrat (prêt déguisé).\n3. DILIGENCES : Vérifier le compte bancaire créditeur de l'avance et la régularité des remboursements antérieurs.`
+      `1. OBJET DU CONTRÔLE & PRODUIT : Demande d'avance sur contrat ${data.libelleProduit || data.produit} (Police n°${data.police}).\n2. DÉCLENCHEUR : Avance de ${data.valeurFmt} sur contrat vie.\n3. CONTRÔLE : Respect des critères d'avance sur ${data.produit} et régularité des flux antérieurs.`
   }
 ];
 
